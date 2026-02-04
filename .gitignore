@@ -1,0 +1,45 @@
+# Zig
+zig-out/
+zig-cache/
+.zig-cache/
+
+# macOS
+.DS_Store
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+macos/build/
+ios/build/
+
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# XCFramework (built artifacts)
+macos/BobrWhisperKit.xcframework/
+ios/BobrWhisperKit.xcframework/
+
+# Models (large files, downloaded at build/runtime)
+*.bin
+*.ggml
+*.gguf
+resources/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.a
+*.dylib
+*.o
+
+# Audio recordings
+*.raw

@@ -1,0 +1,24 @@
+.{
+    .name = .bobrwhisper,
+    .version = "0.1.0",
+    .fingerprint = 0xd8360594ece6e7b,
+    .minimum_zig_version = "0.14.0",
+
+    .dependencies = .{
+        .whisper = .{
+            .url = "git+https://github.com/ggml-org/whisper.cpp#941bdabbe4561bc6de68981aea01bc5ab05781c5",
+            .hash = "N-V-__8AAOZW0gHObmNEfr6yNdj1vYHEp_QdWYYTCkpmDGxk",
+        },
+        .llama = .{
+            .url = "git+https://github.com/ggml-org/llama.cpp#b828e18c75137e29fbfd3f3daa38281172d6a636",
+            .hash = "N-V-__8AACHBrgf72Ho6yyKd9uE9m1LZjfTqNX64koIcguF8",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+    },
+}

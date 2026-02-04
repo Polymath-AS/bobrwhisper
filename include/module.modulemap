@@ -1,0 +1,4 @@
+module BobrWhisperKit {
+    umbrella header "bobrwhisper.h"
+    export *
+}

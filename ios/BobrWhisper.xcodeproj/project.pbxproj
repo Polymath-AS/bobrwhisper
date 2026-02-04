@@ -1,0 +1,545 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B100000000000001 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000001 /* App.swift */; };
+		B100000000000002 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000002 /* AppState.swift */; };
+		B100000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000003 /* ContentView.swift */; };
+		B100000000000004 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000004 /* SettingsView.swift */; };
+		B100000000000010 /* BobrWhisperKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B200000000000010 /* BobrWhisperKit.xcframework */; };
+		B100000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B200000000000011 /* Assets.xcassets */; };
+		B100000000000012 /* silero-v6.2.0.bin in Resources */ = {isa = PBXBuildFile; fileRef = B200000000000012 /* silero-v6.2.0.bin */; };
+		B100000000000021 /* KeyboardShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000022 /* KeyboardShared.swift */; };
+		B100000000000022 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000023 /* KeyboardState.swift */; };
+		B100000000000023 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000021 /* KeyboardViewController.swift */; };
+		B100000000000024 /* KeyboardShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000022 /* KeyboardShared.swift */; };
+		B100000000000025 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000000000023 /* KeyboardState.swift */; };
+		B100000000000026 /* BobrWhisperKeyboard.appex in CopyFiles */ = {isa = PBXBuildFile; fileRef = B200000000000024 /* BobrWhisperKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B900000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B800000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B500000000000002;
+			remoteInfo = BobrWhisperKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B600000000000004 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstSubfolderSpec = 13;
+			files = (
+				B100000000000026 /* BobrWhisperKeyboard.appex in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		B200000000000001 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		B200000000000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		B200000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B200000000000004 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B200000000000010 /* BobrWhisperKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = BobrWhisperKit.xcframework; sourceTree = "<group>"; };
+		B200000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B200000000000012 /* silero-v6.2.0.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = "silero-v6.2.0.bin"; path = "../../resources/silero-v6.2.0.bin"; sourceTree = "<group>"; };
+		B200000000000020 /* BobrWhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BobrWhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B200000000000021 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		B200000000000022 /* KeyboardShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShared.swift; sourceTree = "<group>"; };
+		B200000000000023 /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
+		B200000000000024 /* BobrWhisperKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BobrWhisperKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B200000000000025 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B200000000000026 /* BobrWhisperKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BobrWhisperKeyboard.entitlements; sourceTree = "<group>"; };
+		B200000000000027 /* BobrWhisper.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BobrWhisper.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B300000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B100000000000010 /* BobrWhisperKit.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B300000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B400000000000001 = {
+			isa = PBXGroup;
+			children = (
+				B400000000000002 /* BobrWhisper */,
+				B400000000000005 /* Shared */,
+				B400000000000006 /* BobrWhisperKeyboard */,
+				B400000000000003 /* Frameworks */,
+				B400000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B400000000000002 /* BobrWhisper */ = {
+			isa = PBXGroup;
+			children = (
+				B200000000000001 /* App.swift */,
+				B200000000000002 /* AppState.swift */,
+				B200000000000003 /* ContentView.swift */,
+				B200000000000004 /* SettingsView.swift */,
+				B200000000000027 /* BobrWhisper.entitlements */,
+				B200000000000011 /* Assets.xcassets */,
+				B200000000000012 /* silero-v6.2.0.bin */,
+			);
+			path = BobrWhisper;
+			sourceTree = "<group>";
+		};
+		B400000000000003 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B200000000000010 /* BobrWhisperKit.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B400000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B200000000000020 /* BobrWhisper.app */,
+				B200000000000024 /* BobrWhisperKeyboard.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B400000000000005 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B200000000000022 /* KeyboardShared.swift */,
+				B200000000000023 /* KeyboardState.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B400000000000006 /* BobrWhisperKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				B200000000000021 /* KeyboardViewController.swift */,
+				B200000000000025 /* Info.plist */,
+				B200000000000026 /* BobrWhisperKeyboard.entitlements */,
+			);
+			path = BobrWhisperKeyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B500000000000001 /* BobrWhisper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B700000000000001 /* Build configuration list for PBXNativeTarget "BobrWhisper" */;
+			buildPhases = (
+				B600000000000001 /* Sources */,
+				B300000000000001 /* Frameworks */,
+				B600000000000002 /* Resources */,
+				B600000000000004 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B900000000000008 /* PBXTargetDependency */,
+			);
+			name = BobrWhisper;
+			productName = BobrWhisper;
+			productReference = B200000000000020 /* BobrWhisper.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B500000000000002 /* BobrWhisperKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B700000000000003 /* Build configuration list for PBXNativeTarget "BobrWhisperKeyboard" */;
+			buildPhases = (
+				B600000000000003 /* Sources */,
+				B300000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BobrWhisperKeyboard;
+			productName = BobrWhisperKeyboard;
+			productReference = B200000000000024 /* BobrWhisperKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B800000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					B500000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					B500000000000002 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = B700000000000002 /* Build configuration list for PBXProject "BobrWhisper" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = B400000000000001;
+			productRefGroup = B400000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B500000000000001 /* BobrWhisper */,
+				B500000000000002 /* BobrWhisperKeyboard */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B600000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B100000000000011 /* Assets.xcassets in Resources */,
+				B100000000000012 /* silero-v6.2.0.bin in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B600000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B100000000000001 /* App.swift in Sources */,
+				B100000000000002 /* AppState.swift in Sources */,
+				B100000000000003 /* ContentView.swift in Sources */,
+				B100000000000004 /* SettingsView.swift in Sources */,
+				B100000000000021 /* KeyboardShared.swift in Sources */,
+				B100000000000022 /* KeyboardState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B600000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B100000000000023 /* KeyboardViewController.swift in Sources */,
+				B100000000000024 /* KeyboardShared.swift in Sources */,
+				B100000000000025 /* KeyboardState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B900000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B500000000000002 /* BobrWhisperKeyboard */;
+			targetProxy = B900000000000007 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		B900000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B900000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B900000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BobrWhisper/BobrWhisper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FCWK5WR45W;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = BobrWhisper;
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = bobrwhisper;\n    CFBundleURLSchemes =     (\n        bobrwhisper\n    );\n}";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BobrWhisper needs microphone access for voice transcription.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					AudioToolbox,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					Foundation,
+					"-framework",
+					Metal,
+					"-framework",
+					Accelerate,
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B900000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BobrWhisper/BobrWhisper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FCWK5WR45W;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = BobrWhisper;
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = bobrwhisper;\n    CFBundleURLSchemes =     (\n        bobrwhisper\n    );\n}";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BobrWhisper needs microphone access for voice transcription.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					AudioToolbox,
+					"-framework",
+					AVFoundation,
+					"-framework",
+					Foundation,
+					"-framework",
+					Metal,
+					"-framework",
+					Accelerate,
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B900000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BobrWhisperKeyboard/Resources/BobrWhisperKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FCWK5WR45W;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BobrWhisperKeyboard/Resources/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BobrWhisper needs microphone access for voice transcription.";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios.keyboard;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = BobrWhisperKeyboard;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Debug;
+		};
+		B900000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BobrWhisperKeyboard/Resources/BobrWhisperKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FCWK5WR45W;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BobrWhisperKeyboard/Resources/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "BobrWhisper needs microphone access for voice transcription.";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios.keyboard;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = BobrWhisperKeyboard;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B700000000000001 /* Build configuration list for PBXNativeTarget "BobrWhisper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B900000000000003 /* Debug */,
+				B900000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B700000000000002 /* Build configuration list for PBXProject "BobrWhisper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B900000000000001 /* Debug */,
+				B900000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B700000000000003 /* Build configuration list for PBXNativeTarget "BobrWhisperKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B900000000000005 /* Debug */,
+				B900000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = B800000000000001 /* Project object */;
+}
