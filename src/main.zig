@@ -106,6 +106,11 @@ pub export fn bobrwhisper_get_status(app: ?*App) c.Status {
     return a.getStatus();
 }
 
+pub export fn bobrwhisper_get_audio_level(app: ?*App) f32 {
+    const a = app orelse return 0;
+    return a.getAudioLevel();
+}
+
 pub export fn bobrwhisper_model_exists(app: ?*App, size: c.ModelSize) bool {
     const a = app orelse return false;
     return a.modelExists(size);
@@ -125,6 +130,13 @@ pub export fn bobrwhisper_model_load(app: ?*App, size: c.ModelSize) bool {
 pub export fn bobrwhisper_model_unload(app: ?*App) void {
     const a = app orelse return;
     a.unloadModel();
+}
+
+pub export fn bobrwhisper_settings_write(app: ?*App, settings: ?*const c.Settings) bool {
+    const a = app orelse return false;
+    const s = settings orelse return false;
+    a.writeSettings(s.*) catch return false;
+    return true;
 }
 
 pub export fn bobrwhisper_transcribe(

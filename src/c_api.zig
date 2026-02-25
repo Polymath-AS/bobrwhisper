@@ -39,6 +39,7 @@ pub const ModelSize = enum(c_int) {
     small = 2,
     medium = 3,
     large = 4,
+    large_turbo = 5,
 
     pub fn toModelName(self: ModelSize) []const u8 {
         return switch (self) {
@@ -47,6 +48,7 @@ pub const ModelSize = enum(c_int) {
             .small => "ggml-small.bin",
             .medium => "ggml-medium.bin",
             .large => "ggml-large-v3.bin",
+            .large_turbo => "ggml-large-v3-turbo.bin",
         };
     }
 
@@ -57,6 +59,7 @@ pub const ModelSize = enum(c_int) {
             .small => 466,
             .medium => 1500,
             .large => 3100,
+            .large_turbo => 809,
         };
     }
 };
@@ -110,6 +113,13 @@ pub const RuntimeConfig = extern struct {
         return "~/.bobrwhisper/models";
     }
 
+    pub fn getConfigDomain(self: RuntimeConfig) []const u8 {
+        if (self.config_path) |ptr| {
+            return std.mem.span(ptr);
+        }
+        return "com.uzaaft.BobrWhisper";
+    }
+
     pub fn getLlmModelPath(self: RuntimeConfig) []const u8 {
         if (self.llm_model_path) |ptr| {
             return std.mem.span(ptr);
@@ -123,6 +133,13 @@ pub const RuntimeConfig = extern struct {
         }
         return null;
     }
+};
+
+pub const Settings = extern struct {
+    tone: Tone,
+    remove_filler_words: bool,
+    auto_punctuate: bool,
+    use_llm_formatting: bool,
 };
 
 pub const TranscribeOptions = extern struct {

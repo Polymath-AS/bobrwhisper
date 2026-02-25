@@ -24,6 +24,7 @@ typedef enum {
     BOBRWHISPER_MODEL_SMALL = 2,
     BOBRWHISPER_MODEL_MEDIUM = 3,
     BOBRWHISPER_MODEL_LARGE = 4,
+    BOBRWHISPER_MODEL_LARGE_TURBO = 5,
 } bobrwhisper_model_size_e;
 
 typedef enum {
@@ -65,6 +66,13 @@ typedef struct {
     bool use_llm_formatting;
 } bobrwhisper_transcribe_options_s;
 
+typedef struct {
+    bobrwhisper_tone_e tone;
+    bool remove_filler_words;
+    bool auto_punctuate;
+    bool use_llm_formatting;
+} bobrwhisper_settings_s;
+
 int bobrwhisper_init(void);
 void bobrwhisper_deinit(void);
 
@@ -75,6 +83,7 @@ bool bobrwhisper_model_exists(bobrwhisper_app_t app, bobrwhisper_model_size_e si
 bobrwhisper_string_s bobrwhisper_model_path(bobrwhisper_app_t app, bobrwhisper_model_size_e size);
 bool bobrwhisper_model_load(bobrwhisper_app_t app, bobrwhisper_model_size_e size);
 void bobrwhisper_model_unload(bobrwhisper_app_t app);
+bool bobrwhisper_settings_write(bobrwhisper_app_t app, const bobrwhisper_settings_s* settings);
 
 bool bobrwhisper_start_recording(bobrwhisper_app_t app);
 bool bobrwhisper_start_recording_live(bobrwhisper_app_t app, const char* language);
@@ -97,6 +106,9 @@ bool bobrwhisper_format_text(
 
 // Status
 bobrwhisper_status_e bobrwhisper_get_status(bobrwhisper_app_t app);
+
+// Audio level (RMS) - returns 0.0 when not recording
+float bobrwhisper_get_audio_level(bobrwhisper_app_t app);
 
 // =============================================================================
 // Utility
