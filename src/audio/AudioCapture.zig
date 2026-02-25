@@ -20,6 +20,8 @@ audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
 // Buffer for captured audio (protected by mutex for thread safety)
 buffer: std.ArrayListUnmanaged(f32),
 mutex: std.Thread.Mutex = .{},
+// RMS audio level from the most recent callback buffer, updated under mutex
+audio_level: f32 = 0,
 
 pub const Config = struct {
     sample_rate: f64 = 16000.0,
@@ -56,6 +58,7 @@ pub fn start(self: *AudioCapture) !void {
     if (self.is_recording) return;
 
     self.buffer.clearRetainingCapacity();
+    try self.buffer.ensureTotalCapacity(self.allocator, 16000 * 30);
 
     if (builtin.os.tag == .macos) {
         try self.startCoreAudio();
@@ -74,28 +77,43 @@ pub fn stop(self: *AudioCapture) void {
     }
 
     self.is_recording = false;
+    self.audio_level = 0;
 }
 
 pub fn isRecording(self: *AudioCapture) bool {
     return self.is_recording;
 }
 
-pub fn getSamples(self: anytype) []const f32 {
-    const Self = @TypeOf(self);
-    const ptr: *AudioCapture = switch (Self) {
-        *AudioCapture => self,
-        *const AudioCapture => @constCast(self),
-        else => @compileError("Expected *AudioCapture or *const AudioCapture"),
-    };
-    ptr.mutex.lock();
-    defer ptr.mutex.unlock();
-    return ptr.buffer.items;
+/// Returns a slice into the internal buffer. Only safe to call when recording is stopped,
+/// as the slice is invalidated if the CoreAudio callback triggers a reallocation.
+pub fn getSamples(self: *AudioCapture) []const f32 {
+    std.debug.assert(!self.is_recording);
+    return self.buffer.items;
 }
 
 pub fn copySamples(self: *AudioCapture, allocator: std.mem.Allocator) ![]f32 {
     self.mutex.lock();
     defer self.mutex.unlock();
     return allocator.dupe(f32, self.buffer.items);
+}
+
+/// Copy only samples from the given offset onward, avoiding full-buffer duplication.
+/// Returns a tuple of the copied slice and the total sample count at time of copy.
+pub fn copySamplesFrom(self: *AudioCapture, allocator: std.mem.Allocator, offset: usize) !struct { samples: []f32, total: usize } {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    const total = self.buffer.items.len;
+    const from = @min(offset, total);
+    return .{
+        .samples = try allocator.dupe(f32, self.buffer.items[from..]),
+        .total = total,
+    };
+}
+
+pub fn getAudioLevel(self: *AudioCapture) f32 {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    return self.audio_level;
 }
 
 pub fn getSampleCount(self: *AudioCapture) usize {
@@ -173,7 +191,10 @@ fn stopCoreAudio(self: *AudioCapture) void {
     if (builtin.os.tag != .macos) return;
     if (self.audio_queue == null) return;
 
-    _ = c.AudioQueueStop(self.audio_queue, 1); // 1 = immediate
+    // Flush ensures all in-flight buffers are delivered via the callback
+    // before we stop, so we don't lose the final ~100-200ms of audio.
+    _ = c.AudioQueueFlush(self.audio_queue);
+    _ = c.AudioQueueStop(self.audio_queue, 1);
 }
 
 // CoreAudio callback
@@ -196,6 +217,13 @@ fn audioInputCallback(
         self.buffer.appendSlice(self.allocator, samples[0..sample_count]) catch {
             std.log.err("Failed to append audio samples", .{});
         };
+
+        // Compute RMS audio level from this callback buffer
+        var energy: f32 = 0;
+        for (samples[0..sample_count]) |s| {
+            energy += s * s;
+        }
+        self.audio_level = @sqrt(energy / @as(f32, @floatFromInt(sample_count)));
     }
 
     _ = c.AudioQueueEnqueueBuffer(queue, buffer, 0, null);
@@ -213,8 +241,13 @@ pub fn detectVoiceActivity(samples: []const f32, threshold: f32) bool {
     return energy > threshold;
 }
 
-pub fn trimSilence(allocator: std.mem.Allocator, samples: []const f32, threshold: f32) ![]f32 {
-    if (samples.len == 0) return allocator.dupe(f32, samples);
+pub const TrimBounds = struct {
+    start: usize,
+    end: usize,
+};
+
+pub fn trimSilenceBounds(samples: []const f32, threshold: f32) TrimBounds {
+    if (samples.len == 0) return .{ .start = 0, .end = 0 };
 
     const window_size: usize = 160;
 
@@ -234,7 +267,11 @@ pub fn trimSilence(allocator: std.mem.Allocator, samples: []const f32, threshold
         end_idx -= window_size / 2;
     }
 
-    return allocator.dupe(f32, samples[start_idx..end_idx]);
+    // Keep 0.5s of trailing context so whisper can finalize the last token
+    const tail_padding: usize = 8000;
+    end_idx = @min(samples.len, end_idx + tail_padding);
+
+    return .{ .start = start_idx, .end = end_idx };
 }
 
 pub fn resample(allocator: std.mem.Allocator, samples: []const f32, from_rate: f64, to_rate: f64) ![]f32 {

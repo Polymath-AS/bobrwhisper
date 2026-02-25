@@ -59,7 +59,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !Transcriber {
     defer allocator.free(model_path_z);
 
     std.fs.accessAbsolute(model_path_z, .{}) catch |err| {
-        std.log.err("Model file not found: {s} - {}", .{model_path_z, err});
+        std.log.err("Model file not found: {s} - {}", .{ model_path_z, err });
         return error.ModelNotFound;
     };
 
@@ -105,6 +105,15 @@ pub fn transcribe(self: *Transcriber, samples: []const f32) ![]u8 {
 
 /// Transcribe with language override
 pub fn transcribeWithLanguage(self: *Transcriber, samples: []const f32, language: []const u8) ![]u8 {
+    return self.transcribeInternal(samples, language, false);
+}
+
+/// Transcribe optimized for live/streaming: single segment, no cross-segment context.
+pub fn transcribeLive(self: *Transcriber, samples: []const f32, language: []const u8) ![]u8 {
+    return self.transcribeInternal(samples, language, true);
+}
+
+fn transcribeInternal(self: *Transcriber, samples: []const f32, language: []const u8, live: bool) ![]u8 {
     const ctx = self.ctx orelse return error.NoContext;
 
     if (samples.len == 0) {
@@ -117,9 +126,13 @@ pub fn transcribeWithLanguage(self: *Transcriber, samples: []const f32, language
     wparams.print_timestamps = false;
     wparams.print_special = false;
     wparams.translate = false;
-    wparams.single_segment = false;
     wparams.no_timestamps = true;
     wparams.n_threads = @intCast(self.n_threads);
+
+    if (live) {
+        wparams.single_segment = true;
+        wparams.no_context = true;
+    }
 
     // VAD configuration
     wparams.vad = self.vad_enabled;
@@ -180,15 +193,15 @@ pub fn supportsLanguage(language: []const u8) bool {
 /// Get list of supported languages
 pub fn getSupportedLanguages() []const []const u8 {
     return &.{
-        "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr",
-        "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi",
-        "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no",
-        "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk",
-        "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk",
-        "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw",
-        "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc",
-        "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo",
-        "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl",
+        "en", "zh", "de", "es",  "ru", "ko", "fr", "ja", "pt", "tr",
+        "pl", "ca", "nl", "ar",  "sv", "it", "id", "hi", "fi", "vi",
+        "he", "uk", "el", "ms",  "cs", "ro", "da", "hu", "ta", "no",
+        "th", "ur", "hr", "bg",  "lt", "la", "mi", "ml", "cy", "sk",
+        "te", "fa", "lv", "bn",  "sr", "az", "sl", "kn", "et", "mk",
+        "br", "eu", "is", "hy",  "ne", "mn", "bs", "kk", "sq", "sw",
+        "gl", "mr", "pa", "si",  "km", "sn", "yo", "so", "af", "oc",
+        "ka", "be", "tg", "sd",  "gu", "am", "yi", "lo", "uz", "fo",
+        "ht", "ps", "tk", "nn",  "mt", "sa", "lb", "my", "bo", "tl",
         "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su",
     };
 }

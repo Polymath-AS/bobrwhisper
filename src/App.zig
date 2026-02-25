@@ -5,6 +5,7 @@ const builtin = @import("builtin");
 const c_api = @import("c_api.zig");
 const Transcriber = @import("Transcriber.zig");
 const AudioCapture = @import("audio/AudioCapture.zig");
+const SettingsStore = @import("SettingsStore.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
@@ -16,6 +17,7 @@ config: c_api.RuntimeConfig,
 status: c_api.Status,
 
 transcriber: ?Transcriber,
+live_transcriber: ?Transcriber,
 audio: ?AudioCapture,
 llama: if (has_llm) ?LlamaClient else void,
 
@@ -23,6 +25,8 @@ llama: if (has_llm) ?LlamaClient else void,
 live_thread: ?std.Thread = null,
 live_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 last_transcribed_len: usize = 0,
+frozen_transcript: std.ArrayListUnmanaged(u8) = .{},
+frozen_sample_count: usize = 0,
 
 pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
     return .{
@@ -30,6 +34,7 @@ pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
         .config = config,
         .status = .idle,
         .transcriber = null,
+        .live_transcriber = null,
         .audio = null,
         .llama = if (has_llm) null else {},
     };
@@ -37,7 +42,9 @@ pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
 
 pub fn deinit(self: *App) void {
     self.stopLiveTranscription();
+    self.frozen_transcript.deinit(self.allocator);
     if (self.transcriber) |*t| t.deinit();
+    if (self.live_transcriber) |*t| t.deinit();
     if (self.audio) |*a| a.deinit();
     if (has_llm) {
         if (self.llama) |*l| l.deinit();
@@ -64,10 +71,13 @@ pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
     self.setStatus(.transcribing);
 
     const vad_path = self.config.getVadModelPath();
+    const cpu_count = std.Thread.getCpuCount() catch 4;
+    // Use half of available cores (P-cores on Apple Silicon), minimum 4
+    const n_threads: u32 = @intCast(@max(4, cpu_count / 2));
     self.transcriber = Transcriber.init(self.allocator, .{
         .model_path = model_path,
         .language = "en",
-        .n_threads = 4,
+        .n_threads = n_threads,
         .vad_enabled = vad_path != null,
         .vad_model_path = vad_path,
     }) catch |err| {
@@ -77,11 +87,39 @@ pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
         return err;
     };
 
+    // Try loading base model for faster live transcription
+    if (self.live_transcriber) |*lt| {
+        lt.deinit();
+        self.live_transcriber = null;
+    }
+    if (size != .tiny and size != .base) {
+        const base_name = c_api.ModelSize.base.toModelName();
+        var base_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        if (std.fmt.bufPrintZ(&base_path_buf, "{s}/{s}", .{ models_dir, base_name })) |base_path| {
+            if (std.fs.accessAbsolute(base_path, .{})) |_| {
+                self.live_transcriber = Transcriber.init(self.allocator, .{
+                    .model_path = base_path,
+                    .language = "en",
+                    .n_threads = n_threads,
+                    .vad_enabled = vad_path != null,
+                    .vad_model_path = vad_path,
+                }) catch |err| blk: {
+                    std.log.info("Base model not available for live transcription, using main model: {}", .{err});
+                    break :blk null;
+                };
+            } else |_| {}
+        } else |_| {}
+    }
+
     std.log.info("Model loaded successfully", .{});
     self.setStatus(.idle);
 }
 
 pub fn unloadModel(self: *App) void {
+    if (self.live_transcriber) |*t| {
+        t.deinit();
+        self.live_transcriber = null;
+    }
     if (self.transcriber) |*t| {
         t.deinit();
         self.transcriber = null;
@@ -141,6 +179,8 @@ pub fn startRecordingWithLiveTranscription(self: *App, language: []const u8) !vo
 
     // Reset state
     self.last_transcribed_len = 0;
+    self.frozen_transcript.clearRetainingCapacity();
+    self.frozen_sample_count = 0;
     self.live_stop.store(false, .seq_cst);
 
     try self.audio.?.start();
@@ -156,33 +196,68 @@ pub fn startRecordingWithLiveTranscription(self: *App, language: []const u8) !vo
 fn liveTranscriptionLoop(self: *App, language: [:0]const u8) void {
     defer self.allocator.free(language);
 
-    const interval_ms: u64 = 1500; // Transcribe every 1.5 seconds
+    const interval_ms: u64 = 200;
     const min_new_samples: usize = 8000; // At least 0.5s of new audio (16kHz)
+    const chunk_duration: usize = 16000 * 5; // 5s per chunk
 
     while (!self.live_stop.load(.seq_cst)) {
         std.Thread.sleep(interval_ms * std.time.ns_per_ms);
 
         if (self.live_stop.load(.seq_cst)) break;
 
-        const audio = self.audio orelse continue;
-        const samples = audio.getSamples();
+        const audio: *AudioCapture = if (self.audio) |*a| a else continue;
 
-        // Only transcribe if we have enough new audio
-        if (samples.len < self.last_transcribed_len + min_new_samples) continue;
+        const total_samples = audio.getSampleCount();
+        if (total_samples < self.last_transcribed_len + min_new_samples) continue;
 
-        // Transcribe accumulated audio
+        // Only copy unfrozen audio instead of the entire buffer
+        const result = audio.copySamplesFrom(self.allocator, self.frozen_sample_count) catch continue;
+        defer self.allocator.free(result.samples);
+        const tail_samples = result.samples;
+
         var transcriber = self.transcriber orelse continue;
-        const text = transcriber.transcribeWithLanguage(samples, language) catch |err| {
+
+        // Finalize completed chunks: transcribe each once, freeze text
+        var local_offset: usize = 0;
+        while (tail_samples.len - local_offset > chunk_duration) {
+            const chunk_end = local_offset + chunk_duration;
+            const chunk_text = transcriber.transcribeWithLanguage(
+                tail_samples[local_offset..chunk_end],
+                language,
+            ) catch |err| {
+                std.log.warn("Chunk transcription failed: {}", .{err});
+                break;
+            };
+            defer self.allocator.free(chunk_text);
+
+            self.frozen_transcript.appendSlice(self.allocator, chunk_text) catch break;
+            local_offset = chunk_end;
+            self.frozen_sample_count += chunk_duration;
+        }
+
+        self.last_transcribed_len = result.total;
+
+        // Transcribe only the trailing unfrozen audio with live-optimized params
+        const tail = tail_samples[local_offset..];
+        if (tail.len == 0) {
+            if (self.frozen_transcript.items.len > 0) {
+                self.notifyTranscript(self.frozen_transcript.items, false);
+            }
+            continue;
+        }
+
+        var live_t = self.live_transcriber orelse self.transcriber orelse continue;
+        const tail_text = live_t.transcribeLive(tail, language) catch |err| {
             std.log.warn("Live transcription failed: {}", .{err});
             continue;
         };
-        defer self.allocator.free(text);
+        defer self.allocator.free(tail_text);
 
-        self.last_transcribed_len = samples.len;
-
-        if (text.len > 0) {
-            self.notifyTranscript(text, false); // is_final = false
-        }
+        // Temporarily extend frozen buffer with tail for combined notification
+        const frozen_len = self.frozen_transcript.items.len;
+        self.frozen_transcript.appendSlice(self.allocator, tail_text) catch continue;
+        self.notifyTranscript(self.frozen_transcript.items, false);
+        self.frozen_transcript.shrinkRetainingCapacity(frozen_len);
     }
 }
 
@@ -209,21 +284,23 @@ pub fn stopRecordingAndTranscribe(self: *App, options: c_api.TranscribeOptions) 
         a.stop();
     }
 
-    // Do final transcription
-    try self.transcribe(options);
+    // Reuse frozen transcript: only re-transcribe the unfrozen tail with full-quality params
+    const has_frozen = self.frozen_transcript.items.len > 0;
+    if (has_frozen) {
+        try self.transcribeTail(options);
+    } else {
+        try self.transcribe(options);
+    }
 }
 
-pub fn isRecording(self: *App) bool {
-    return self.status == .recording;
-}
-
-pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
+/// Transcribe only the unfrozen tail and combine with frozen transcript for the final result.
+fn transcribeTail(self: *App, options: c_api.TranscribeOptions) !void {
     var transcriber = self.transcriber orelse {
         self.notifyError("No model loaded");
         return error.ModelNotLoaded;
     };
 
-    const audio = self.audio orelse {
+    const audio: *AudioCapture = if (self.audio) |*a| a else {
         self.notifyError("No audio recorded");
         return error.NoAudioData;
     };
@@ -237,8 +314,58 @@ pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
         return error.NoAudioData;
     }
 
-    const trimmed = try AudioCapture.trimSilence(self.allocator, samples, 0.001);
-    defer self.allocator.free(trimmed);
+    const tail = samples[self.frozen_sample_count..];
+
+    if (tail.len > 0) {
+        const bounds = AudioCapture.trimSilenceBounds(tail, 0.001);
+        const trimmed = tail[bounds.start..bounds.end];
+
+        if (trimmed.len > 0) {
+            const tail_text = try transcriber.transcribeWithLanguage(trimmed, options.getLanguage());
+            defer self.allocator.free(tail_text);
+            self.frozen_transcript.appendSlice(self.allocator, tail_text) catch {};
+        }
+    }
+
+    const final_text = try self.allocator.dupe(u8, self.frozen_transcript.items);
+    defer self.allocator.free(final_text);
+
+    std.log.info("Transcription complete, text length: {d}", .{final_text.len});
+
+    if (options.use_llm_formatting) {
+        try self.formatText(final_text, options.tone, self.config.on_transcript, self.config.userdata);
+    } else {
+        self.notifyTranscript(final_text, true);
+        self.setStatus(.ready);
+    }
+}
+
+pub fn isRecording(self: *App) bool {
+    return self.status == .recording;
+}
+
+pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
+    var transcriber = self.transcriber orelse {
+        self.notifyError("No model loaded");
+        return error.ModelNotLoaded;
+    };
+
+    const audio: *AudioCapture = if (self.audio) |*a| a else {
+        self.notifyError("No audio recorded");
+        return error.NoAudioData;
+    };
+
+    self.setStatus(.transcribing);
+
+    const samples = audio.getSamples();
+    if (samples.len == 0) {
+        self.setStatus(.@"error");
+        self.notifyError("No audio data recorded");
+        return error.NoAudioData;
+    }
+
+    const bounds = AudioCapture.trimSilenceBounds(samples, 0.001);
+    const trimmed = samples[bounds.start..bounds.end];
 
     const raw_text = try transcriber.transcribeWithLanguage(trimmed, options.getLanguage());
     defer self.allocator.free(raw_text);
@@ -318,6 +445,16 @@ fn buildFormattingPrompt(self: *App, input: []const u8, tone: c_api.Tone) ![]u8 
 
 pub fn getStatus(self: *App) c_api.Status {
     return self.status;
+}
+
+pub fn getAudioLevel(self: *App) f32 {
+    const audio = if (self.audio) |*a| a else return 0;
+    return audio.getAudioLevel();
+}
+
+pub fn writeSettings(self: *App, settings: c_api.Settings) !void {
+    std.debug.assert(self.config.getConfigDomain().len > 0);
+    try SettingsStore.write(self.config, settings);
 }
 
 fn setStatus(self: *App, status: c_api.Status) void {
