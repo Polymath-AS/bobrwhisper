@@ -30,7 +30,7 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoPaste") private var autoPaste = true
-    @AppStorage("hotkeyCombo") private var hotkeyCombo = "fn+option"
+    @AppStorage("hotkeyCombo") private var hotkeyCombo = "option+space"
     
     var body: some View {
         Form {
@@ -50,6 +50,7 @@ struct GeneralSettingsView: View {
             
             Section("Hotkey") {
                 Picker("Activation combo", selection: $hotkeyCombo) {
+                    Text("Option (⌥) + Space").tag("option+space")
                     Text("Fn + Option (⌥)").tag("fn+option")
                     Text("Fn + Option (⌥) + Cmd (⌘)").tag("fn+option+cmd")
                     Text("Fn + Cmd (⌘)").tag("fn+cmd")
@@ -68,9 +69,17 @@ struct GeneralSettingsView: View {
 
 struct ModelsSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @AppStorage("defaultModel") private var defaultModelKey: String = ""
+    
+    private var defaultModel: ModelSize? {
+        ModelSize.fromStorageKey(defaultModelKey)
+    }
     
     private func modelStatus(_ size: ModelSize) -> String {
         if appState.modelExists(size) {
+            if defaultModel == size {
+                return "Downloaded (Default)"
+            }
             return "Downloaded"
         } else {
             return "Not downloaded"
@@ -92,7 +101,7 @@ struct ModelsSettingsView: View {
                         Spacer()
                         
                         if appState.modelExists(size) {
-                            if appState.selectedWhisperModel == size {
+                            if appState.selectedWhisperModel == size && appState.isModelLoaded {
                                 Button("Loaded") {}
                                     .disabled(true)
                                     .buttonStyle(.borderedProminent)
@@ -127,7 +136,7 @@ struct ModelsSettingsView: View {
                     }
                 }
                 
-                Text("Larger models are more accurate but slower")
+                Text("Larger models are more accurate but slower. The last loaded model becomes the default and auto-loads on startup.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -14,6 +14,7 @@ pub const WhisperModel = enum {
     small,
     medium,
     large,
+    large_turbo,
 
     pub fn filename(self: WhisperModel) []const u8 {
         return switch (self) {
@@ -22,6 +23,7 @@ pub const WhisperModel = enum {
             .small => "ggml-small.bin",
             .medium => "ggml-medium.bin",
             .large => "ggml-large-v3.bin",
+            .large_turbo => "ggml-large-v3-turbo.bin",
         };
     }
 
@@ -33,6 +35,7 @@ pub const WhisperModel = enum {
             .small => base ++ "ggml-small.bin",
             .medium => base ++ "ggml-medium.bin",
             .large => base ++ "ggml-large-v3.bin",
+            .large_turbo => base ++ "ggml-large-v3-turbo.bin",
         };
     }
 
@@ -43,6 +46,7 @@ pub const WhisperModel = enum {
             .small => "466 MB",
             .medium => "1.5 GB",
             .large => "3.1 GB",
+            .large_turbo => "809 MB",
         };
     }
 
@@ -248,7 +252,8 @@ fn printUsage() void {
         \\  base   (142 MB)  - Fast, decent accuracy
         \\  small  (466 MB)  - Good balance (default, recommended)
         \\  medium (1.5 GB)  - High accuracy
-        \\  large  (3.1 GB)  - Best accuracy
+        \\  large       (3.1 GB)  - Best accuracy
+        \\  large_turbo (809 MB)  - Near-large accuracy, ~4x faster
         \\
         \\LLM Models (for --format, auto-downloaded):
         \\  llama3.2-1b  (700 MB)  - Fast, good quality (default, recommended)
@@ -574,8 +579,11 @@ fn modelsCommand(allocator: std.mem.Allocator) !void {
         \\  medium  (1.5 GB)  - High accuracy
         \\  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
         \\
-        \\  large   (3.1 GB)  - Best accuracy
+        \\  large       (3.1 GB)  - Best accuracy
         \\  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin
+        \\
+        \\  large_turbo (809 MB)  - Near-large accuracy, ~4x faster
+        \\  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
         \\
         \\Download example:
         \\  mkdir -p ~/.bobrwhisper/models

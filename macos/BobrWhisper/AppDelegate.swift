@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         
         // Create app with runtime config
         appState.createApp()
+        appState.overlayController = OverlayPanelController(appState: appState)
         
         // Register global hotkey (Fn key or custom)
         setupHotkey()
@@ -33,20 +34,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     
     private func setupHotkey() {
-        // Global event monitor for Fn key (or configurable hotkey)
-        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
-            self?.handleFlagsChanged(event)
+        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.flagsChanged, .keyDown, .keyUp]
+        ) { [weak self] event in
+            self?.handleHotkeyEvent(event)
         }
     }
     
-    private func handleFlagsChanged(_ event: NSEvent) {
-        // Get the configured hotkey combo
-        let hotkeyCombo = UserDefaults.standard.string(forKey: "hotkeyCombo") ?? "fn+option"
+    private func handleHotkeyEvent(_ event: NSEvent) {
+        let hotkeyCombo = UserDefaults.standard.string(forKey: "hotkeyCombo") ?? "option+space"
         
+        if hotkeyCombo == "option+space" {
+            handleOptionSpace(event)
+        } else if event.type == .flagsChanged {
+            handleFlagsChanged(event, combo: hotkeyCombo)
+        }
+    }
+    
+    private func handleOptionSpace(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown:
+            if event.charactersIgnoringModifiers == " ", !event.isARepeat,
+               event.modifierFlags.contains(.option), !appState.isRecording {
+                appState.startRecording()
+            }
+        case .keyUp:
+            if event.charactersIgnoringModifiers == " ", appState.isRecording {
+                appState.stopRecording()
+            }
+        case .flagsChanged:
+            if !event.modifierFlags.contains(.option), appState.isRecording {
+                appState.stopRecording()
+            }
+        default:
+            break
+        }
+    }
+    
+    private func handleFlagsChanged(_ event: NSEvent, combo: String) {
         let flags = event.modifierFlags
         
         let keyPressed: Bool
-        switch hotkeyCombo {
+        switch combo {
         case "fn+option+cmd":
             keyPressed = flags.contains(.function) && flags.contains(.option) && flags.contains(.command)
         case "fn+cmd":
@@ -55,17 +84,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             keyPressed = flags.contains(.option) && flags.contains(.command)
         case "control+option":
             keyPressed = flags.contains(.control) && flags.contains(.option)
-        case "fn+option":
-            keyPressed = flags.contains(.function) && flags.contains(.option)
-        default: // "fn+option" as default
+        default:
             keyPressed = flags.contains(.function) && flags.contains(.option)
         }
         
         if keyPressed && !appState.isRecording {
-            print("Starting recording...")
             appState.startRecording()
         } else if !keyPressed && appState.isRecording {
-            print("Stopping recording and transcribing...")
             appState.stopRecording()
         }
     }

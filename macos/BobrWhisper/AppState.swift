@@ -12,10 +12,20 @@ class AppState: ObservableObject {
     @Published var downloadProgress: Double = 0
     
     @Published var selectedWhisperModel: ModelSize = .small
-    @Published var tone: Tone = .neutral
+    @Published var tone: Tone = .neutral {
+        didSet {
+            persistSettings()
+        }
+    }
+    @Published private(set) var isModelLoaded: Bool = false
+    @Published private(set) var audioLevel: Float = 0
+    
+    var overlayController: OverlayPanelController?
     
     private var app: bobrwhisper_app_t?
+    private var audioLevelTimer: Timer?
     private var modelsDirCString: UnsafeMutablePointer<CChar>?
+    private var configDomainCString: UnsafeMutablePointer<CChar>?
     private var vadModelPathCString: UnsafeMutablePointer<CChar>?
     private var downloadSession: URLSession?
     private var downloadTask: URLSessionDownloadTask?
@@ -80,6 +90,7 @@ class AppState: ObservableObject {
                 appState.lastTranscript = transcript
                 if isFinal {
                     appState.pasteToActiveApp()
+                    appState.overlayController?.scheduleAutoDismiss()
                 }
             }
         }
@@ -103,10 +114,14 @@ class AppState: ObservableObject {
         
         let vadModelPath = Bundle.main.path(forResource: "silero-v6.2.0", ofType: "bin")
         
+        let configDomain = Bundle.main.bundleIdentifier ?? "com.uzaaft.BobrWhisper"
+
         modelsDirCString = strdup(modelsDir)
+        configDomainCString = strdup(configDomain)
         vadModelPathCString = vadModelPath.flatMap { strdup($0) }
-        
+
         config.models_dir = UnsafePointer(modelsDirCString)
+        config.config_path = UnsafePointer(configDomainCString)
         config.vad_model_path = UnsafePointer(vadModelPathCString)
         
         app = bobrwhisper_app_new(&config)
@@ -114,7 +129,20 @@ class AppState: ObservableObject {
         if app == nil {
             errorMessage = "Failed to create BobrWhisper app"
             status = .error
+            return
         }
+        
+        persistSettings()
+        loadDefaultModel()
+    }
+    
+    private func loadDefaultModel() {
+        guard let key = UserDefaults.standard.string(forKey: "defaultModel"),
+              let model = ModelSize.fromStorageKey(key),
+              modelExists(model) else { return }
+        
+        selectedWhisperModel = model
+        loadModel()
     }
     
     func destroyApp() {
@@ -123,7 +151,22 @@ class AppState: ObservableObject {
             self.app = nil
         }
         if let ptr = modelsDirCString { free(ptr); modelsDirCString = nil }
+        if let ptr = configDomainCString { free(ptr); configDomainCString = nil }
         if let ptr = vadModelPathCString { free(ptr); vadModelPathCString = nil }
+    }
+
+    private func persistSettings() {
+        guard let app = app else { return }
+
+        var settings = bobrwhisper_settings_s()
+        settings.tone = tone.cValue
+        settings.remove_filler_words = true
+        settings.auto_punctuate = true
+        settings.use_llm_formatting = false
+
+        if !bobrwhisper_settings_write(app, &settings) {
+            errorMessage = "Failed to save settings"
+        }
     }
     
     func startRecording() {
@@ -133,7 +176,9 @@ class AppState: ObservableObject {
         "en".withCString { langPtr in
             if bobrwhisper_start_recording_live(app, langPtr) {
                 isRecording = true
-                lastTranscript = "" // Clear previous transcript
+                lastTranscript = ""
+                overlayController?.show()
+                startAudioLevelPolling()
             }
         }
     }
@@ -141,6 +186,7 @@ class AppState: ObservableObject {
     func stopRecording() {
         guard let app = app else { return }
         
+        stopAudioLevelPolling()
         let currentTone = tone
         
         // Stop with final transcription
@@ -155,6 +201,19 @@ class AppState: ObservableObject {
             _ = bobrwhisper_stop_recording_live(app, &options)
         }
         isRecording = false
+    }
+    
+    private func startAudioLevelPolling() {
+        audioLevelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self = self, let app = self.app else { return }
+            self.audioLevel = bobrwhisper_get_audio_level(app)
+        }
+    }
+    
+    private func stopAudioLevelPolling() {
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = nil
+        audioLevel = 0
     }
     
     func transcribe() {
@@ -209,8 +268,11 @@ class AppState: ObservableObject {
                 if !success {
                     self.errorMessage = "Failed to load model"
                     self.status = .error
+                    self.isModelLoaded = false
                 } else {
                     self.status = .idle
+                    self.isModelLoaded = true
+                    UserDefaults.standard.set(model.storageKey, forKey: "defaultModel")
                 }
             }
         }
@@ -219,6 +281,7 @@ class AppState: ObservableObject {
     func unloadModel() {
         guard let app = app else { return }
         bobrwhisper_model_unload(app)
+        isModelLoaded = false
     }
     
     var modelsDirectory: URL {
@@ -261,6 +324,8 @@ class AppState: ObservableObject {
                     }
                     try FileManager.default.moveItem(at: tempURL, to: destinationURL)
                     self?.downloadProgress = 1.0
+                    self?.selectedWhisperModel = size
+                    self?.loadModel()
                 } catch {
                     self?.errorMessage = "Failed to save model: \(error.localizedDescription)"
                     self?.status = .error
@@ -351,8 +416,24 @@ enum ModelSize: String, CaseIterable, Identifiable {
     case small = "Small (~466 MB)"
     case medium = "Medium (~1.5 GB)"
     case large = "Large (~3.1 GB)"
+    case largeTurbo = "Large Turbo (~809 MB)"
     
     var id: String { rawValue }
+    
+    var storageKey: String {
+        switch self {
+        case .tiny: return "tiny"
+        case .base: return "base"
+        case .small: return "small"
+        case .medium: return "medium"
+        case .large: return "large"
+        case .largeTurbo: return "large_turbo"
+        }
+    }
+    
+    static func fromStorageKey(_ key: String) -> ModelSize? {
+        allCases.first { $0.storageKey == key }
+    }
     
     var filename: String {
         switch self {
@@ -361,6 +442,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
         case .small: return "ggml-small.bin"
         case .medium: return "ggml-medium.bin"
         case .large: return "ggml-large-v3.bin"
+        case .largeTurbo: return "ggml-large-v3-turbo.bin"
         }
     }
     
@@ -376,6 +458,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
         case .small: return BOBRWHISPER_MODEL_SMALL
         case .medium: return BOBRWHISPER_MODEL_MEDIUM
         case .large: return BOBRWHISPER_MODEL_LARGE
+        case .largeTurbo: return BOBRWHISPER_MODEL_LARGE_TURBO
         }
     }
 }
@@ -397,5 +480,4 @@ enum Tone: String, CaseIterable, Identifiable {
         }
     }
 }
-
 

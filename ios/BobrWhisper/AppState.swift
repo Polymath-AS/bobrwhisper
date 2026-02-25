@@ -366,6 +366,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
     case small = "Small (~466 MB)"
     case medium = "Medium (~1.5 GB)"
     case large = "Large (~3.1 GB)"
+    case largeTurbo = "Large Turbo (~809 MB)"
     
     var id: String { rawValue }
     
@@ -376,6 +377,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
         case .small: return BOBRWHISPER_MODEL_SMALL
         case .medium: return BOBRWHISPER_MODEL_MEDIUM
         case .large: return BOBRWHISPER_MODEL_LARGE
+        case .largeTurbo: return BOBRWHISPER_MODEL_LARGE_TURBO
         }
     }
     
@@ -386,6 +388,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
         case .small: return "ggml-small.bin"
         case .medium: return "ggml-medium.bin"
         case .large: return "ggml-large-v3.bin"
+        case .largeTurbo: return "ggml-large-v3-turbo.bin"
         }
     }
     
@@ -401,6 +404,7 @@ enum ModelSize: String, CaseIterable, Identifiable {
         case .small: return "~466 MB • Balanced speed/accuracy"
         case .medium: return "~1.5 GB • Slow, high accuracy"
         case .large: return "~3.1 GB • Slowest, best accuracy"
+        case .largeTurbo: return "~809 MB • Near-large accuracy, ~4x faster"
         }
     }
 }
