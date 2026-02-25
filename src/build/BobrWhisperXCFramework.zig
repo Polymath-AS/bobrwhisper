@@ -32,7 +32,7 @@ fn initMacOS(b: *std.Build, config: *const Config) !BobrWhisperXCFramework {
     copy_lib.step.dependOn(&mkdir.step);
 
     const copy_headers = b.addSystemCommand(&.{
-        "cp", "-r", "include/bobrwhisper.h", "include/module.modulemap",
+        "cp",                                                    "-r", "include/bobrwhisper.h", "include/module.modulemap",
         "macos/BobrWhisperKit.xcframework/macos-arm64/include/",
     });
     copy_headers.step.dependOn(&copy_lib.step);
@@ -53,7 +53,7 @@ fn initIOS(b: *std.Build, config: *const Config) !BobrWhisperXCFramework {
     const sim_lib = try BobrWhisperLib.initStatic(b, &sim_deps);
 
     const mkdir = b.addSystemCommand(&.{
-        "sh", "-c",
+        "sh",                                                                                                                   "-c",
         "mkdir -p ios/BobrWhisperKit.xcframework/ios-arm64/include ios/BobrWhisperKit.xcframework/ios-arm64-simulator/include",
     });
 

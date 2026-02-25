@@ -13,10 +13,7 @@ pub fn init(b: *std.Build) Config {
 }
 
 pub fn xcframeworkOptimize(self: *const Config) std.builtin.OptimizeMode {
-    // Always use ReleaseFast for xcframework - ggml uses pointer arithmetic
-    // that triggers safety checks in Debug/ReleaseSafe modes
-    _ = self;
-    return .ReleaseFast;
+    return self.optimize;
 }
 
 pub fn xcodebuildConfiguration(self: *const Config) []const u8 {

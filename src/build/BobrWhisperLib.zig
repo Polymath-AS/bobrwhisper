@@ -9,16 +9,12 @@ output: std.Build.LazyPath,
 lib: ?*std.Build.Step.Compile = null,
 
 pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
-    // Force ReleaseFast for library - ggml uses pointer arithmetic patterns that
-    // trigger Zig's runtime safety checks (null pointer offset) in Debug mode
-    const lib_optimize: std.builtin.OptimizeMode = if (deps.optimize == .Debug) .ReleaseFast else deps.optimize;
-
     const lib = b.addLibrary(.{
         .name = "bobrwhisper",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = deps.target,
-            .optimize = lib_optimize,
+            .optimize = deps.optimize,
         }),
         .linkage = .static,
     });
@@ -33,16 +29,12 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
 }
 
 pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
-    // Force ReleaseFast for library - ggml uses pointer arithmetic patterns that
-    // trigger Zig's runtime safety checks (null pointer offset) in Debug mode
-    const lib_optimize: std.builtin.OptimizeMode = if (deps.optimize == .Debug) .ReleaseFast else deps.optimize;
-
     const lib = b.addLibrary(.{
         .name = "bobrwhisper",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = deps.target,
-            .optimize = lib_optimize,
+            .optimize = deps.optimize,
         }),
         .linkage = .static,
     });

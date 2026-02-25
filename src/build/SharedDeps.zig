@@ -29,12 +29,12 @@ pub fn initForTarget(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !SharedDeps {
-    // Force ReleaseFast for ggml/whisper/llama - they use pointer arithmetic patterns
-    // that trigger Zig's runtime safety checks (null pointer offset) in Debug mode
-    const lib_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
+    // Force ReleaseFast for C/C++ deps - Xcode Debug enables UBSan which requires
+    // linking the sanitizer runtime. Zig code can still use Debug mode.
+    const c_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
 
-    const llama = try llama_build.build(b, target, lib_optimize);
-    const whisper = try whisper_build.build(b, target, lib_optimize, llama);
+    const llama = try llama_build.build(b, target, c_optimize);
+    const whisper = try whisper_build.build(b, target, c_optimize, llama);
 
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const metal_resources: ?MetalResources = if (is_darwin) blk: {
@@ -83,6 +83,7 @@ fn linkAppleFrameworks(b: *std.Build, compile: *std.Build.Step.Compile, target: 
         try AppleSdk.addPaths(b, compile);
 
         compile.linkFramework("Foundation");
+        compile.linkFramework("CoreFoundation");
         compile.linkFramework("Accelerate");
         compile.linkFramework("Metal");
         compile.linkFramework("MetalKit");

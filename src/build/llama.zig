@@ -32,7 +32,7 @@ pub fn build(
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
     const has_metal = is_darwin and !is_ios_simulator;
-    
+
     const c_flags: []const []const u8 = if (has_metal) &.{
         "-D_DARWIN_C_SOURCE",
         "-D_XOPEN_SOURCE=600",
@@ -161,17 +161,21 @@ pub fn build(
         // Merge the metal source files - replace placeholders with actual content
         // The metal file has: __embed_ggml-common.h__ and #include "ggml-metal-impl.h"
         // that need to be replaced with actual file contents
-        const merge_metal = b.addSystemCommand(&.{ "/bin/sh", "-c",
+        const merge_metal = b.addSystemCommand(&.{
+            "/bin/sh", "-c",
             \\sed -e '/__embed_ggml-common.h__/{r '"$1"'' -e 'd;}' "$3" | \
             \\sed -e '/#include "ggml-metal-impl.h"/{r '"$2"'' -e 'd;}' > "$4"
-        , "--" });
+            ,
+            "--",
+        });
         merge_metal.addFileArg(llama_dep.path("ggml/src/ggml-common.h"));
         merge_metal.addFileArg(llama_dep.path("ggml/src/ggml-metal/ggml-metal-impl.h"));
         merge_metal.addFileArg(llama_dep.path("ggml/src/ggml-metal/ggml-metal.metal"));
         const merged_metal = merge_metal.addOutputFileArg("ggml-metal-merged.metal");
 
         // Generate assembly that embeds the metal source using absolute path
-        const gen_asm = b.addSystemCommand(&.{ "/bin/sh", "-c",
+        const gen_asm = b.addSystemCommand(&.{
+            "/bin/sh", "-c",
             \\cat > "$2" <<EOF
             \\.section __DATA,__ggml_metallib
             \\.globl _ggml_metallib_start
@@ -180,7 +184,9 @@ pub fn build(
             \\.globl _ggml_metallib_end
             \\_ggml_metallib_end:
             \\EOF
-        , "--" });
+            ,
+            "--",
+        });
         gen_asm.addFileArg(merged_metal);
         const embed_asm = gen_asm.addOutputFileArg("ggml-metal-embed.s");
 
@@ -242,15 +248,15 @@ pub fn build(
     llama_lib.addCSourceFiles(.{
         .root = llama_dep.path("src"),
         .files = &.{
-            "llama.cpp",             "llama-adapter.cpp",       "llama-arch.cpp",
-            "llama-batch.cpp",       "llama-chat.cpp",          "llama-context.cpp",
-            "llama-cparams.cpp",     "llama-grammar.cpp",       "llama-graph.cpp",
-            "llama-hparams.cpp",     "llama-impl.cpp",          "llama-io.cpp",
-            "llama-kv-cache.cpp",    "llama-kv-cache-iswa.cpp", "llama-memory.cpp",
+            "llama.cpp",               "llama-adapter.cpp",            "llama-arch.cpp",
+            "llama-batch.cpp",         "llama-chat.cpp",               "llama-context.cpp",
+            "llama-cparams.cpp",       "llama-grammar.cpp",            "llama-graph.cpp",
+            "llama-hparams.cpp",       "llama-impl.cpp",               "llama-io.cpp",
+            "llama-kv-cache.cpp",      "llama-kv-cache-iswa.cpp",      "llama-memory.cpp",
             "llama-memory-hybrid.cpp", "llama-memory-hybrid-iswa.cpp", "llama-memory-recurrent.cpp",
-            "llama-mmap.cpp",        "llama-model.cpp",         "llama-model-loader.cpp",
-            "llama-model-saver.cpp", "llama-quant.cpp",         "llama-sampling.cpp",
-            "llama-vocab.cpp",       "unicode.cpp",             "unicode-data.cpp",
+            "llama-mmap.cpp",          "llama-model.cpp",              "llama-model-loader.cpp",
+            "llama-model-saver.cpp",   "llama-quant.cpp",              "llama-sampling.cpp",
+            "llama-vocab.cpp",         "unicode.cpp",                  "unicode-data.cpp",
         },
         .flags = llama_flags,
     });
@@ -260,32 +266,32 @@ pub fn build(
     llama_lib.addCSourceFiles(.{
         .root = llama_dep.path("src/models"),
         .files = &.{
-            "afmoe.cpp",          "apertus.cpp",        "arcee.cpp",          "arctic.cpp",
-            "arwkv7.cpp",         "baichuan.cpp",       "bailingmoe.cpp",     "bailingmoe2.cpp",
-            "bert.cpp",           "bitnet.cpp",         "bloom.cpp",          "chameleon.cpp",
-            "chatglm.cpp",        "codeshell.cpp",      "cogvlm.cpp",         "cohere2-iswa.cpp",
-            "command-r.cpp",      "dbrx.cpp",           "deci.cpp",           "deepseek.cpp",
-            "deepseek2.cpp",      "dots1.cpp",          "dream.cpp",          "ernie4-5-moe.cpp",
-            "ernie4-5.cpp",       "exaone-moe.cpp",     "exaone.cpp",         "exaone4.cpp",
-            "falcon-h1.cpp",      "falcon.cpp",         "gemma-embedding.cpp", "gemma.cpp",
-            "gemma2-iswa.cpp",    "gemma3.cpp",         "gemma3n-iswa.cpp",   "glm4-moe.cpp",
-            "glm4.cpp",           "gpt2.cpp",           "gptneox.cpp",        "granite-hybrid.cpp",
-            "granite.cpp",        "graph-context-mamba.cpp", "grok.cpp",       "grovemoe.cpp",
-            "hunyuan-dense.cpp",  "hunyuan-moe.cpp",    "internlm2.cpp",      "jais.cpp",
-            "jamba.cpp",          "lfm2.cpp",           "llada-moe.cpp",      "llada.cpp",
-            "llama-iswa.cpp",     "llama.cpp",          "maincoder.cpp",      "mamba.cpp",
-            "mimo2-iswa.cpp",     "minicpm3.cpp",       "minimax-m2.cpp",     "mistral3.cpp",
-            "modern-bert.cpp",    "mpt.cpp",            "nemotron-h.cpp",     "nemotron.cpp",
-            "neo-bert.cpp",       "olmo.cpp",           "olmo2.cpp",          "olmoe.cpp",
-            "openai-moe-iswa.cpp", "openelm.cpp",       "orion.cpp",          "pangu-embedded.cpp",
-            "phi2.cpp",           "phi3.cpp",           "plamo.cpp",          "plamo2.cpp",
-            "plamo3.cpp",         "plm.cpp",            "qwen.cpp",           "qwen2.cpp",
-            "qwen2moe.cpp",       "qwen2vl.cpp",        "qwen3.cpp",          "qwen3moe.cpp",
-            "qwen3next.cpp",      "qwen3vl-moe.cpp",    "qwen3vl.cpp",        "refact.cpp",
-            "rnd1.cpp",           "rwkv6-base.cpp",     "rwkv6.cpp",          "rwkv6qwen2.cpp",
-            "rwkv7-base.cpp",     "rwkv7.cpp",          "seed-oss.cpp",       "smallthinker.cpp",
-            "smollm3.cpp",        "stablelm.cpp",       "starcoder.cpp",      "starcoder2.cpp",
-            "t5-dec.cpp",         "t5-enc.cpp",         "wavtokenizer-dec.cpp", "xverse.cpp",
+            "afmoe.cpp",           "apertus.cpp",             "arcee.cpp",            "arctic.cpp",
+            "arwkv7.cpp",          "baichuan.cpp",            "bailingmoe.cpp",       "bailingmoe2.cpp",
+            "bert.cpp",            "bitnet.cpp",              "bloom.cpp",            "chameleon.cpp",
+            "chatglm.cpp",         "codeshell.cpp",           "cogvlm.cpp",           "cohere2-iswa.cpp",
+            "command-r.cpp",       "dbrx.cpp",                "deci.cpp",             "deepseek.cpp",
+            "deepseek2.cpp",       "dots1.cpp",               "dream.cpp",            "ernie4-5-moe.cpp",
+            "ernie4-5.cpp",        "exaone-moe.cpp",          "exaone.cpp",           "exaone4.cpp",
+            "falcon-h1.cpp",       "falcon.cpp",              "gemma-embedding.cpp",  "gemma.cpp",
+            "gemma2-iswa.cpp",     "gemma3.cpp",              "gemma3n-iswa.cpp",     "glm4-moe.cpp",
+            "glm4.cpp",            "gpt2.cpp",                "gptneox.cpp",          "granite-hybrid.cpp",
+            "granite.cpp",         "graph-context-mamba.cpp", "grok.cpp",             "grovemoe.cpp",
+            "hunyuan-dense.cpp",   "hunyuan-moe.cpp",         "internlm2.cpp",        "jais.cpp",
+            "jamba.cpp",           "lfm2.cpp",                "llada-moe.cpp",        "llada.cpp",
+            "llama-iswa.cpp",      "llama.cpp",               "maincoder.cpp",        "mamba.cpp",
+            "mimo2-iswa.cpp",      "minicpm3.cpp",            "minimax-m2.cpp",       "mistral3.cpp",
+            "modern-bert.cpp",     "mpt.cpp",                 "nemotron-h.cpp",       "nemotron.cpp",
+            "neo-bert.cpp",        "olmo.cpp",                "olmo2.cpp",            "olmoe.cpp",
+            "openai-moe-iswa.cpp", "openelm.cpp",             "orion.cpp",            "pangu-embedded.cpp",
+            "phi2.cpp",            "phi3.cpp",                "plamo.cpp",            "plamo2.cpp",
+            "plamo3.cpp",          "plm.cpp",                 "qwen.cpp",             "qwen2.cpp",
+            "qwen2moe.cpp",        "qwen2vl.cpp",             "qwen3.cpp",            "qwen3moe.cpp",
+            "qwen3next.cpp",       "qwen3vl-moe.cpp",         "qwen3vl.cpp",          "refact.cpp",
+            "rnd1.cpp",            "rwkv6-base.cpp",          "rwkv6.cpp",            "rwkv6qwen2.cpp",
+            "rwkv7-base.cpp",      "rwkv7.cpp",               "seed-oss.cpp",         "smallthinker.cpp",
+            "smollm3.cpp",         "stablelm.cpp",            "starcoder.cpp",        "starcoder2.cpp",
+            "t5-dec.cpp",          "t5-enc.cpp",              "wavtokenizer-dec.cpp", "xverse.cpp",
         },
         .flags = llama_flags,
     });
