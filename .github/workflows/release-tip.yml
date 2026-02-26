@@ -1,0 +1,116 @@
+name: Release Tip
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  release-tip:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      ZIG_LOCAL_CACHE_DIR: /Users/runner/zig/local-cache
+      ZIG_GLOBAL_CACHE_DIR: /Users/runner/zig/global-cache
+      XCODE_DERIVED_DATA_PATH: build/DerivedData
+      VAD_CACHE_DIR: /Users/runner/.cache/bobrwhisper
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Zig Build Outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            /Users/runner/zig
+            .zig-cache
+          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'build.zig.zon', 'build.zig.zon.json', 'src/**/*.zig', 'include/**') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
+
+      - name: Cache Xcode DerivedData
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/DerivedData
+            /Users/runner/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: ${{ runner.os }}-xcode-${{ hashFiles('macos/BobrWhisper.xcodeproj/project.pbxproj', 'macos/BobrWhisper/**/*.swift', 'macos/BobrWhisper/**/*.plist') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-
+
+      - name: Cache VAD Model
+        uses: actions/cache@v4
+        with:
+          path: /Users/runner/.cache/bobrwhisper
+          key: ${{ runner.os }}-vad-v6.2.0
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Zig Core XCFramework (with Nix)
+        run: |
+          nix --extra-experimental-features 'nix-command flakes' \
+            shell nixpkgs#zig -c zig build xcframework -Doptimize=ReleaseFast
+
+      - name: Download VAD Model
+        run: |
+          mkdir -p "$VAD_CACHE_DIR"
+          mkdir -p resources
+
+          if [ ! -f "$VAD_CACHE_DIR/silero-v6.2.0.bin" ]; then
+            nix --extra-experimental-features 'nix-command flakes' \
+              shell nixpkgs#curl -c curl -fsSL \
+                -o "$VAD_CACHE_DIR/silero-v6.2.0.bin" \
+                https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin
+          fi
+
+          cp "$VAD_CACHE_DIR/silero-v6.2.0.bin" resources/silero-v6.2.0.bin
+
+      - name: Build macOS App (without Nix)
+        run: |
+          xcodebuild \
+            -project macos/BobrWhisper.xcodeproj \
+            -scheme BobrWhisper \
+            -configuration Release \
+            -derivedDataPath "$XCODE_DERIVED_DATA_PATH" \
+            COMPILATION_CACHE_CAS_PATH=/Users/runner/Library/Developer/Xcode/DerivedData/CompilationCache.noindex \
+            COMPILATION_CACHE_KEEP_CAS_DIRECTORY=YES \
+            ARCHS=arm64 \
+            build
+
+      - name: Package App
+        run: |
+          app_path="build/DerivedData/Build/Products/Release/BobrWhisper.app"
+          if [ ! -d "$app_path" ]; then
+            echo "Expected app bundle not found: $app_path"
+            exit 1
+          fi
+
+          nix --extra-experimental-features 'nix-command flakes' \
+            shell nixpkgs#zip -c zip -9 -r bobrwhisper-macos-arm64.zip "$app_path"
+
+      - name: Move tip Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa tip -m "Latest continuous release" "${GITHUB_SHA}"
+          git push --force origin tip
+
+      - name: Publish Tip Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tip
+          name: BobrWhisper Tip
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: bobrwhisper-macos-arm64.zip
+          overwrite_files: true
