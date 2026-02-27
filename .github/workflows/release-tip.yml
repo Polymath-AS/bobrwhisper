@@ -104,9 +104,9 @@ jobs:
           cd "$package_dir"
 
           nix --extra-experimental-features 'nix-command flakes' \
-            shell nixpkgs#zip -c zip -9 -r bobrwhisper-macos-arm64.zip BobrWhisper.app
+            shell nixpkgs#zip -c zip -q -9 -r bobrwhisper-macos-arm64.zip BobrWhisper.app
 
-          if ! unzip -l bobrwhisper-macos-arm64.zip | grep -q "BobrWhisper.app/"; then
+          if ! unzip -Z1 bobrwhisper-macos-arm64.zip | grep -q "^BobrWhisper.app/$"; then
             echo "Release archive is missing BobrWhisper.app at archive root"
             exit 1
           fi
@@ -125,5 +125,6 @@ jobs:
           name: BobrWhisper Tip
           prerelease: true
           target_commitish: ${{ github.sha }}
-          files: bobrwhisper-macos-arm64.zip
+          files: build/package/bobrwhisper-macos-arm64.zip
+          fail_on_unmatched_files: true
           overwrite_files: true
