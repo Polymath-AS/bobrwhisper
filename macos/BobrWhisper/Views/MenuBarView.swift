@@ -2,6 +2,13 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
+    private static let logTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,15 +24,48 @@ struct MenuBarView: View {
             
             Divider()
             
-            // Last transcript preview
-            if !appState.lastTranscript.isEmpty {
-                Text(appState.lastTranscript)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                    .lineLimit(5)
-                    .textSelection(.enabled)
+            // Activity log
+            if !appState.transcriptLog.isEmpty {
+                HStack {
+                    Text("Activity Log")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
                 
+                    Button("Clear") {
+                        appState.clearTranscriptLog()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                }
+                .padding(.horizontal)
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(appState.transcriptLog) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(Self.logTimestampFormatter.string(from: entry.createdAt))
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundColor(.secondary)
+
+                                Text(entry.text)
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+
+                            if entry.id != appState.transcriptLog.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+
                 Button("Copy to Clipboard") {
                     appState.copyToClipboard()
                 }
@@ -46,6 +86,12 @@ struct MenuBarView: View {
             Divider()
             
             // Actions
+            Button("Open Dashboard") {
+                openWindow(id: "dashboard")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .padding(.horizontal)
+
             Button("Settings...") {
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
@@ -59,7 +105,7 @@ struct MenuBarView: View {
             .padding(.horizontal)
             .padding(.bottom, 8)
         }
-        .frame(width: 280)
+        .frame(width: 320)
     }
     
     private var statusColor: Color {

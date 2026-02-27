@@ -3,6 +3,12 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingSettings = false
+    private static let logTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
     
     var body: some View {
         NavigationStack {
@@ -10,7 +16,7 @@ struct ContentView: View {
                 VStack(spacing: 24) {
                     statusSection
                     
-                    if !appState.lastTranscript.isEmpty {
+                    if !appState.transcriptLog.isEmpty {
                         transcriptSection
                     }
                     
@@ -44,7 +50,7 @@ struct ContentView: View {
             appState.createApp()
         }
     }
-    
+
     private var statusSection: some View {
         VStack(spacing: 12) {
             ZStack {
@@ -71,9 +77,17 @@ struct ContentView: View {
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Transcript")
+                Text("Activity Log")
                     .font(.headline)
                 
+                Text("\(appState.transcriptLog.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color(.systemGray5))
+                    .clipShape(Capsule())
+
                 Spacer()
                 
                 Button {
@@ -84,14 +98,29 @@ struct ContentView: View {
                 }
             }
             
-            Text(appState.lastTranscript)
-                .font(.body)
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                .textSelection(.enabled)
-            
+            VStack(spacing: 0) {
+                ForEach(appState.transcriptLog) { entry in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Self.logTimestampFormatter.string(from: entry.createdAt))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundColor(.secondary)
+
+                        Text(entry.text)
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+
+                    if entry.id != appState.transcriptLog.last?.id {
+                        Divider()
+                    }
+                }
+            }
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+
             HStack(spacing: 12) {
                 Button {
                     appState.copyToClipboard()
@@ -101,7 +130,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 
-                ShareLink(item: appState.lastTranscript) {
+                ShareLink(item: appState.latestTranscriptText) {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }

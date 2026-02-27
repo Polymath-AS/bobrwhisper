@@ -11,6 +11,7 @@
 		A100000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000002 /* AppDelegate.swift */; };
 		A100000000000003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000003 /* AppState.swift */; };
 		A100000000000004 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000004 /* MenuBarView.swift */; };
+		A100000000000007 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000007 /* MainWindowView.swift */; };
 		A100000000000005 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000005 /* SettingsView.swift */; };
 		A100000000000006 /* TranscriptOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000006 /* TranscriptOverlayView.swift */; };
 		A100000000000010 /* BobrWhisperKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A200000000000010 /* BobrWhisperKit.xcframework */; };
@@ -23,6 +24,7 @@
 		A200000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A200000000000003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A200000000000004 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		A200000000000007 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		A200000000000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A200000000000006 /* TranscriptOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptOverlayView.swift; sourceTree = "<group>"; };
 		A200000000000010 /* BobrWhisperKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = BobrWhisperKit.xcframework; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 		A400000000000005 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				A200000000000007 /* MainWindowView.swift */,
 				A200000000000004 /* MenuBarView.swift */,
 				A200000000000005 /* SettingsView.swift */,
 				A200000000000006 /* TranscriptOverlayView.swift */,
@@ -166,6 +169,7 @@
 				A100000000000001 /* App.swift in Sources */,
 				A100000000000002 /* AppDelegate.swift in Sources */,
 				A100000000000003 /* AppState.swift in Sources */,
+				A100000000000007 /* MainWindowView.swift in Sources */,
 				A100000000000004 /* MenuBarView.swift in Sources */,
 				A100000000000005 /* SettingsView.swift in Sources */,
 				A100000000000006 /* TranscriptOverlayView.swift in Sources */,

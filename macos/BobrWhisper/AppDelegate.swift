@@ -32,6 +32,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         appState.destroyApp()
         bobrwhisper_deinit()
     }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
     
     private func setupHotkey() {
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(

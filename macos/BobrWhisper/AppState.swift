@@ -10,6 +10,7 @@ class AppState: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isDownloading: Bool = false
     @Published var downloadProgress: Double = 0
+    @Published private(set) var transcriptLog: [TranscriptLogEntry] = []
     
     @Published var selectedWhisperModel: ModelSize = .small
     @Published var tone: Tone = .neutral {
@@ -29,6 +30,7 @@ class AppState: ObservableObject {
     private var vadModelPathCString: UnsafeMutablePointer<CChar>?
     private var downloadSession: URLSession?
     private var downloadTask: URLSessionDownloadTask?
+    private let transcriptLogLimit: Int = 50
     
     var statusIcon: String {
         switch status {
@@ -50,6 +52,10 @@ class AppState: ObservableObject {
         case .ready: return "Done"
         case .error: return errorMessage ?? "Error"
         }
+    }
+
+    var latestTranscriptText: String {
+        transcriptLog.first?.text ?? lastTranscript
     }
     
     init() {}
@@ -89,6 +95,7 @@ class AppState: ObservableObject {
             DispatchQueue.main.async {
                 appState.lastTranscript = transcript
                 if isFinal {
+                    appState.appendTranscriptLogEntry(transcript)
                     appState.pasteToActiveApp()
                     appState.overlayController?.scheduleAutoDismiss()
                 }
@@ -347,7 +354,7 @@ class AppState: ObservableObject {
     func copyToClipboard() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(lastTranscript, forType: .string)
+        pasteboard.setString(latestTranscriptText, forType: .string)
     }
     
     func pasteToActiveApp() {
@@ -364,6 +371,28 @@ class AppState: ObservableObject {
         vKeyDown?.post(tap: .cghidEventTap)
         vKeyUp?.post(tap: .cghidEventTap)
     }
+
+    func clearTranscriptLog() {
+        transcriptLog.removeAll()
+    }
+
+    private func appendTranscriptLogEntry(_ transcript: String) {
+        let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTranscript.isEmpty else {
+            return
+        }
+
+        transcriptLog.insert(TranscriptLogEntry(text: normalizedTranscript, createdAt: Date()), at: 0)
+        if transcriptLog.count > transcriptLogLimit {
+            transcriptLog.removeLast(transcriptLog.count - transcriptLogLimit)
+        }
+    }
+}
+
+struct TranscriptLogEntry: Identifiable {
+    let id = UUID()
+    let text: String
+    let createdAt: Date
 }
 
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
@@ -480,4 +509,3 @@ enum Tone: String, CaseIterable, Identifiable {
         }
     }
 }
-
