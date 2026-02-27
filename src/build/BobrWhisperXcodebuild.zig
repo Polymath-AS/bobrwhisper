@@ -18,34 +18,97 @@ pub fn init(
     target: Target,
 ) BobrWhisperXcodebuild {
     const configuration = config.xcodebuildConfiguration();
+    const team_id = if (config.xcode_sign) config.requireAppleTeamId() else config.apple_team_id;
+    const development_team_arg = if (team_id) |apple_team_id| b.fmt("DEVELOPMENT_TEAM={s}", .{apple_team_id}) else null;
+    const code_sign_identity_arg = if (config.code_sign_identity) |identity| b.fmt("CODE_SIGN_IDENTITY={s}", .{identity}) else null;
 
     const xcodebuild = switch (target) {
-        .macos => b.addSystemCommand(&.{
-            "xcodebuild",
-            "-project",
-            "macos/BobrWhisper.xcodeproj",
-            "-scheme",
-            "BobrWhisper",
-            "-configuration",
-            configuration,
-            "build",
-            "ARCHS=arm64",
-        }),
-        .ios => b.addSystemCommand(&.{
-            "xcodebuild",
-            "-project",
-            "ios/BobrWhisper.xcodeproj",
-            "-scheme",
-            "BobrWhisper",
-            "-configuration",
-            configuration,
-            "-sdk",
-            "iphoneos",
-            "CODE_SIGN_IDENTITY=-",
-            "CODE_SIGNING_REQUIRED=NO",
-            "CODE_SIGNING_ALLOWED=NO",
-            "build",
-        }),
+        .macos => if (team_id != null)
+            if (config.code_sign_identity != null)
+                b.addSystemCommand(&.{
+                    "xcodebuild",
+                    "-project",
+                    "macos/BobrWhisper.xcodeproj",
+                    "-scheme",
+                    "BobrWhisper",
+                    "-configuration",
+                    configuration,
+                    development_team_arg.?,
+                    code_sign_identity_arg.?,
+                    "build",
+                    "ARCHS=arm64",
+                })
+            else
+                b.addSystemCommand(&.{
+                    "xcodebuild",
+                    "-project",
+                    "macos/BobrWhisper.xcodeproj",
+                    "-scheme",
+                    "BobrWhisper",
+                    "-configuration",
+                    configuration,
+                    development_team_arg.?,
+                    "build",
+                    "ARCHS=arm64",
+                })
+        else
+            b.addSystemCommand(&.{
+                "xcodebuild",
+                "-project",
+                "macos/BobrWhisper.xcodeproj",
+                "-scheme",
+                "BobrWhisper",
+                "-configuration",
+                configuration,
+                "build",
+                "ARCHS=arm64",
+            }),
+        .ios => if (config.xcode_sign)
+            if (config.code_sign_identity != null)
+                b.addSystemCommand(&.{
+                    "xcodebuild",
+                    "-project",
+                    "ios/BobrWhisper.xcodeproj",
+                    "-scheme",
+                    "BobrWhisper",
+                    "-configuration",
+                    configuration,
+                    "-sdk",
+                    "iphoneos",
+                    development_team_arg.?,
+                    code_sign_identity_arg.?,
+                    "build",
+                })
+            else
+                b.addSystemCommand(&.{
+                    "xcodebuild",
+                    "-project",
+                    "ios/BobrWhisper.xcodeproj",
+                    "-scheme",
+                    "BobrWhisper",
+                    "-configuration",
+                    configuration,
+                    "-sdk",
+                    "iphoneos",
+                    development_team_arg.?,
+                    "build",
+                })
+        else
+            b.addSystemCommand(&.{
+                "xcodebuild",
+                "-project",
+                "ios/BobrWhisper.xcodeproj",
+                "-scheme",
+                "BobrWhisper",
+                "-configuration",
+                configuration,
+                "-sdk",
+                "iphoneos",
+                "CODE_SIGN_IDENTITY=-",
+                "CODE_SIGNING_REQUIRED=NO",
+                "CODE_SIGNING_ALLOWED=NO",
+                "build",
+            }),
     };
 
     xcodebuild.step.dependOn(xcframework.step);
