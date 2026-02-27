@@ -101,6 +101,8 @@ jobs:
           mkdir -p "$package_dir"
           cp -R "$app_path" "$package_dir/BobrWhisper.app"
 
+          cd "$package_dir"
+
           nix --extra-experimental-features 'nix-command flakes' \
             shell nixpkgs#zip -c zip -9 -r bobrwhisper-macos-arm64.zip BobrWhisper.app
 
@@ -108,7 +110,6 @@ jobs:
             echo "Release archive is missing BobrWhisper.app at archive root"
             exit 1
           fi
-        working-directory: build/package
 
       - name: Move tip Tag
         run: |
