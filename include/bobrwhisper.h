@@ -104,6 +104,16 @@ bool bobrwhisper_format_text(
     void* userdata
 );
 
+bool bobrwhisper_log_transcript(
+    bobrwhisper_app_t app,
+    bobrwhisper_string_s transcript
+);
+bobrwhisper_string_s bobrwhisper_log_recent_json(
+    bobrwhisper_app_t app,
+    size_t limit
+);
+bool bobrwhisper_log_clear(bobrwhisper_app_t app);
+
 // Status
 bobrwhisper_status_e bobrwhisper_get_status(bobrwhisper_app_t app);
 

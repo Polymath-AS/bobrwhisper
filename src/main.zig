@@ -161,6 +161,23 @@ pub export fn bobrwhisper_format_text(
     return true;
 }
 
+pub export fn bobrwhisper_log_transcript(app: ?*App, transcript: c.String) bool {
+    const a = app orelse return false;
+    a.appendTranscriptLog(transcript.toSlice()) catch return false;
+    return true;
+}
+
+pub export fn bobrwhisper_log_recent_json(app: ?*App, limit: usize) c.String {
+    const a = app orelse return c.String.fromSlice("[]");
+    return a.getTranscriptLogRecentJson(limit) catch c.String.fromSlice("[]");
+}
+
+pub export fn bobrwhisper_log_clear(app: ?*App) bool {
+    const a = app orelse return false;
+    a.clearTranscriptLog() catch return false;
+    return true;
+}
+
 pub export fn bobrwhisper_string_free(str: c.String) void {
     str.deinit(global_allocator orelse return);
 }

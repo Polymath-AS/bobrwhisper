@@ -405,6 +405,7 @@
 					"-framework",
 					Accelerate,
 					"-lc++",
+					"-lsqlite3",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -454,6 +455,7 @@
 					"-framework",
 					Accelerate,
 					"-lc++",
+					"-lsqlite3",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";

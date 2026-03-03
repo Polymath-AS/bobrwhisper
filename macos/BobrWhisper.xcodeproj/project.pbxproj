@@ -318,6 +318,7 @@
 					"-framework",
 					Accelerate,
 					"-lc++",
+					"-lsqlite3",
 				);
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -363,6 +364,7 @@
 					"-framework",
 					Accelerate,
 					"-lc++",
+					"-lsqlite3",
 				);
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

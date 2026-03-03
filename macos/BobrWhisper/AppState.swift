@@ -95,7 +95,7 @@ class AppState: ObservableObject {
             DispatchQueue.main.async {
                 appState.lastTranscript = transcript
                 if isFinal {
-                    appState.appendTranscriptLogEntry(transcript)
+                    appState.appendTranscriptLogEntry(transcript, persistToStore: true)
                     appState.pasteToActiveApp()
                     appState.overlayController?.scheduleAutoDismiss()
                 }
@@ -139,6 +139,7 @@ class AppState: ObservableObject {
             return
         }
         
+        loadTranscriptLogFromStore()
         persistSettings()
         loadDefaultModel()
     }
@@ -373,18 +374,54 @@ class AppState: ObservableObject {
     }
 
     func clearTranscriptLog() {
+        if let app = app {
+            _ = bobrwhisper_log_clear(app)
+        }
         transcriptLog.removeAll()
     }
 
-    private func appendTranscriptLogEntry(_ transcript: String) {
+    private func appendTranscriptLogEntry(_ transcript: String, persistToStore: Bool) {
         let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedTranscript.isEmpty else {
             return
         }
 
+        if persistToStore, let app = app {
+            normalizedTranscript.withCString { textPtr in
+                let text = bobrwhisper_string_s(ptr: textPtr, len: normalizedTranscript.utf8.count)
+                _ = bobrwhisper_log_transcript(app, text)
+            }
+        }
+
         transcriptLog.insert(TranscriptLogEntry(text: normalizedTranscript, createdAt: Date()), at: 0)
         if transcriptLog.count > transcriptLogLimit {
             transcriptLog.removeLast(transcriptLog.count - transcriptLogLimit)
+        }
+    }
+
+    private func loadTranscriptLogFromStore() {
+        guard let app = app else { return }
+
+        let jsonString = bobrwhisper_log_recent_json(app, transcriptLogLimit)
+        defer { bobrwhisper_string_free(jsonString) }
+
+        guard let ptr = jsonString.ptr, jsonString.len > 0 else {
+            transcriptLog = []
+            return
+        }
+
+        let data = Data(bytes: ptr, count: jsonString.len)
+        let decoder = JSONDecoder()
+        guard let entries = try? decoder.decode([TranscriptLogStoreEntry].self, from: data) else {
+            transcriptLog = []
+            return
+        }
+
+        transcriptLog = entries.map { entry in
+            TranscriptLogEntry(
+                text: entry.text,
+                createdAt: Date(timeIntervalSince1970: Double(entry.createdAtUnixMs) / 1000.0)
+            )
         }
     }
 }
@@ -393,6 +430,16 @@ struct TranscriptLogEntry: Identifiable {
     let id = UUID()
     let text: String
     let createdAt: Date
+}
+
+private struct TranscriptLogStoreEntry: Decodable {
+    let createdAtUnixMs: Int64
+    let text: String
+
+    enum CodingKeys: String, CodingKey {
+        case createdAtUnixMs = "created_at_unix_ms"
+        case text
+    }
 }
 
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {

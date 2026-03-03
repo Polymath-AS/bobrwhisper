@@ -73,6 +73,7 @@ pub fn link(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Com
     whisper_build.link(compile, self.whisper);
     llama_build.link(compile, self.llama);
     try linkAppleFrameworks(b, compile, self.target);
+    compile.linkSystemLibrary("sqlite3");
     compile.linkLibC();
     compile.linkLibCpp();
 }

@@ -6,6 +6,7 @@ const c_api = @import("c_api.zig");
 const Transcriber = @import("Transcriber.zig");
 const AudioCapture = @import("audio/AudioCapture.zig");
 const SettingsStore = @import("SettingsStore.zig");
+const LogStore = @import("LogStore.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
@@ -20,6 +21,7 @@ transcriber: ?Transcriber,
 live_transcriber: ?Transcriber,
 audio: ?AudioCapture,
 llama: if (has_llm) ?LlamaClient else void,
+log_store: LogStore,
 
 // Live transcription state
 live_thread: ?std.Thread = null,
@@ -29,6 +31,7 @@ frozen_transcript: std.ArrayListUnmanaged(u8) = .{},
 frozen_sample_count: usize = 0,
 
 pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
+    const log_store = try LogStore.init(allocator, config.getModelsDir());
     return .{
         .allocator = allocator,
         .config = config,
@@ -37,6 +40,7 @@ pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
         .live_transcriber = null,
         .audio = null,
         .llama = if (has_llm) null else {},
+        .log_store = log_store,
     };
 }
 
@@ -49,6 +53,7 @@ pub fn deinit(self: *App) void {
     if (has_llm) {
         if (self.llama) |*l| l.deinit();
     }
+    self.log_store.deinit();
 }
 
 pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
@@ -455,6 +460,64 @@ pub fn getAudioLevel(self: *App) f32 {
 pub fn writeSettings(self: *App, settings: c_api.Settings) !void {
     std.debug.assert(self.config.getConfigDomain().len > 0);
     try SettingsStore.write(self.config, settings);
+}
+
+pub fn clearTranscriptLog(self: *App) !void {
+    try self.log_store.clear();
+}
+
+pub fn appendTranscriptLog(self: *App, transcript: []const u8) !void {
+    try self.log_store.appendTranscript(self.allocator, transcript);
+}
+
+pub fn getTranscriptLogRecentJson(self: *App, limit: usize) !c_api.String {
+    const entries = try self.log_store.readRecent(self.allocator, limit);
+    defer LogStore.freeEntries(self.allocator, entries);
+
+    var json_buffer: std.ArrayListUnmanaged(u8) = .{};
+    errdefer json_buffer.deinit(self.allocator);
+
+    try json_buffer.append(self.allocator, '[');
+    for (entries, 0..) |entry, idx| {
+        if (idx > 0) {
+            try json_buffer.append(self.allocator, ',');
+        }
+        try json_buffer.append(self.allocator, '{');
+        try json_buffer.appendSlice(self.allocator, "\"created_at_unix_ms\":");
+        try json_buffer.writer(self.allocator).print("{d}", .{entry.created_at_unix_ms});
+        try json_buffer.appendSlice(self.allocator, ",\"text\":");
+        try appendJsonEscapedString(&json_buffer, self.allocator, entry.text);
+        try json_buffer.append(self.allocator, '}');
+    }
+    try json_buffer.append(self.allocator, ']');
+
+    const json_slice = try json_buffer.toOwnedSlice(self.allocator);
+    return c_api.String.fromSlice(json_slice);
+}
+
+fn appendJsonEscapedString(
+    buffer: *std.ArrayListUnmanaged(u8),
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) !void {
+    try buffer.append(allocator, '"');
+    for (text) |ch| {
+        switch (ch) {
+            '"' => try buffer.appendSlice(allocator, "\\\""),
+            '\\' => try buffer.appendSlice(allocator, "\\\\"),
+            '\n' => try buffer.appendSlice(allocator, "\\n"),
+            '\r' => try buffer.appendSlice(allocator, "\\r"),
+            '\t' => try buffer.appendSlice(allocator, "\\t"),
+            else => {
+                if (ch < 0x20) {
+                    try buffer.writer(allocator).print("\\u00{x:0>2}", .{ch});
+                } else {
+                    try buffer.append(allocator, ch);
+                }
+            },
+        }
+    }
+    try buffer.append(allocator, '"');
 }
 
 fn setStatus(self: *App, status: c_api.Status) void {
