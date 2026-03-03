@@ -12,6 +12,7 @@ const AudioCapture = @This();
 allocator: std.mem.Allocator,
 is_recording: bool = false,
 sample_rate: f64 = 16000.0,
+buffer_duration_ms: u32 = 30,
 
 // CoreAudio handles (macOS only)
 audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
@@ -26,7 +27,7 @@ audio_level: f32 = 0,
 pub const Config = struct {
     sample_rate: f64 = 16000.0,
     channels: u32 = 1,
-    buffer_duration_ms: u32 = 100,
+    buffer_duration_ms: u32 = 30,
 };
 
 pub fn init(allocator: std.mem.Allocator) !AudioCapture {
@@ -37,6 +38,7 @@ pub fn initWithConfig(allocator: std.mem.Allocator, config: Config) !AudioCaptur
     return .{
         .allocator = allocator,
         .sample_rate = config.sample_rate,
+        .buffer_duration_ms = config.buffer_duration_ms,
         .buffer = .{},
     };
 }
@@ -161,7 +163,8 @@ fn startCoreAudio(self: *AudioCapture) !void {
     }
 
     // Allocate and enqueue buffers
-    const buffer_size: u32 = @intFromFloat(self.sample_rate * 0.1 * @sizeOf(f32));
+    const buffer_duration_sec = @as(f64, @floatFromInt(self.buffer_duration_ms)) / 1000.0;
+    const buffer_size: u32 = @intFromFloat(self.sample_rate * buffer_duration_sec * @sizeOf(f32));
     var buffers: [3]c.AudioQueueBufferRef = undefined;
 
     for (&buffers) |*buf| {
@@ -191,10 +194,9 @@ fn stopCoreAudio(self: *AudioCapture) void {
     if (builtin.os.tag != .macos) return;
     if (self.audio_queue == null) return;
 
-    // Flush ensures all in-flight buffers are delivered via the callback
-    // before we stop, so we don't lose the final ~100-200ms of audio.
-    _ = c.AudioQueueFlush(self.audio_queue);
-    _ = c.AudioQueueStop(self.audio_queue, 1);
+    // Use non-immediate stop so CoreAudio can deliver the final input buffer
+    // and avoid truncating the last spoken words on key release.
+    _ = c.AudioQueueStop(self.audio_queue, 0);
 }
 
 // CoreAudio callback

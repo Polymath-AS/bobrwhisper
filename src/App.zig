@@ -324,12 +324,11 @@ fn transcribeTail(self: *App, options: c_api.TranscribeOptions) !void {
     if (tail.len > 0) {
         const bounds = AudioCapture.trimSilenceBounds(tail, 0.001);
         const trimmed = tail[bounds.start..bounds.end];
+        const segment = if (trimmed.len > 0) trimmed else tail;
 
-        if (trimmed.len > 0) {
-            const tail_text = try transcriber.transcribeWithLanguage(trimmed, options.getLanguage());
-            defer self.allocator.free(tail_text);
-            self.frozen_transcript.appendSlice(self.allocator, tail_text) catch {};
-        }
+        const tail_text = try transcriber.transcribeWithLanguage(segment, options.getLanguage());
+        defer self.allocator.free(tail_text);
+        self.frozen_transcript.appendSlice(self.allocator, tail_text) catch {};
     }
 
     const final_text = try self.allocator.dupe(u8, self.frozen_transcript.items);
@@ -371,8 +370,9 @@ pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
 
     const bounds = AudioCapture.trimSilenceBounds(samples, 0.001);
     const trimmed = samples[bounds.start..bounds.end];
+    const segment = if (trimmed.len > 0) trimmed else samples;
 
-    const raw_text = try transcriber.transcribeWithLanguage(trimmed, options.getLanguage());
+    const raw_text = try transcriber.transcribeWithLanguage(segment, options.getLanguage());
     defer self.allocator.free(raw_text);
 
     std.log.info("Transcription complete, text length: {d}", .{raw_text.len});
