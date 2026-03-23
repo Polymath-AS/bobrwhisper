@@ -127,7 +127,7 @@ pub fn addRunStep(b: *std.Build, xcodebuild: *const BobrWhisperXcodebuild) *std.
     const run = b.addSystemCommand(&.{
         "sh",
         "-c",
-        \\APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "BobrWhisper.app" -path "*/Debug/*" 2>/dev/null | head -1)
+        \\APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "BobrWhisper.app" -path "*/Debug/*" -not -path "*/Index.noindex/*" 2>/dev/null | head -1)
         \\if [ -z "$APP_PATH" ]; then
         \\    echo "Error: BobrWhisper.app not found in DerivedData"
         \\    exit 1
