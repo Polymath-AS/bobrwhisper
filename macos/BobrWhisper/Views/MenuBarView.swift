@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     private static let logTimestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -93,7 +94,8 @@ struct MenuBarView: View {
             .padding(.horizontal)
 
             Button("Settings...") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openSettings()
+                NSApp.activate(ignoringOtherApps: true)
             }
             .keyboardShortcut(",", modifiers: .command)
             .padding(.horizontal)
