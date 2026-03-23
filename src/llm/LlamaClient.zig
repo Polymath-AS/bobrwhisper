@@ -7,6 +7,8 @@ const c = @cImport({
 
 const LlamaClient = @This();
 
+pub const StreamSink = *const fn (userdata: ?*anyopaque, partial_text: []const u8) void;
+
 allocator: std.mem.Allocator,
 model: ?*c.llama_model,
 ctx: ?*c.llama_context,
@@ -77,6 +79,16 @@ fn createSampler() *c.llama_sampler {
 }
 
 pub fn generate(self: *LlamaClient, prompt: []const u8, max_tokens: u32) ![]u8 {
+    return self.generateStreaming(prompt, max_tokens, null, null);
+}
+
+pub fn generateStreaming(
+    self: *LlamaClient,
+    prompt: []const u8,
+    max_tokens: u32,
+    stream_sink: ?StreamSink,
+    stream_userdata: ?*anyopaque,
+) ![]u8 {
     _ = self.model orelse return error.NoModel;
     const ctx = self.ctx orelse return error.NoContext;
     const sampler = self.sampler orelse return error.NoSampler;
@@ -106,6 +118,9 @@ pub fn generate(self: *LlamaClient, prompt: []const u8, max_tokens: u32) ![]u8 {
     // Generate tokens
     var output: std.ArrayListUnmanaged(u8) = .empty;
     errdefer output.deinit(self.allocator);
+    const stream_interval_ns: i128 = 40 * std.time.ns_per_ms;
+    var last_stream_ns: i128 = std.time.nanoTimestamp() - stream_interval_ns;
+    var last_streamed_len: usize = 0;
 
     var n_cur: i32 = n_prompt;
     const n_ctx: i32 = @intCast(c.llama_n_ctx(ctx));
@@ -123,6 +138,15 @@ pub fn generate(self: *LlamaClient, prompt: []const u8, max_tokens: u32) ![]u8 {
         const n = c.llama_token_to_piece(vocab, new_token, &buf, buf.len, 0, true);
         if (n > 0) {
             try output.appendSlice(self.allocator, buf[0..@intCast(n)]);
+
+            if (stream_sink) |sink| {
+                const now_ns = std.time.nanoTimestamp();
+                if (output.items.len > last_streamed_len and now_ns - last_stream_ns >= stream_interval_ns) {
+                    sink(stream_userdata, output.items);
+                    last_stream_ns = now_ns;
+                    last_streamed_len = output.items.len;
+                }
+            }
         }
 
         // Decode next token
@@ -133,6 +157,12 @@ pub fn generate(self: *LlamaClient, prompt: []const u8, max_tokens: u32) ![]u8 {
         }
 
         n_cur += 1;
+    }
+
+    if (stream_sink) |sink| {
+        if (output.items.len > last_streamed_len) {
+            sink(stream_userdata, output.items);
+        }
     }
 
     // Clear memory for next generation

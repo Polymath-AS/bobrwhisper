@@ -13,6 +13,16 @@ const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
 
 const App = @This();
 
+const llm_model_candidates = [_][]const u8{
+    "llama-3.2-1b-q4_k_m.gguf",
+    "llama-3.2-3b-q4_k_m.gguf",
+    "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "qwen2.5-0.5b-q4_k_m.gguf",
+    "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "qwen2.5-1.5b-q4_k_m.gguf",
+    "llama-3.2-1b-q4.gguf",
+};
+
 allocator: std.mem.Allocator,
 config: c_api.RuntimeConfig,
 status: c_api.Status,
@@ -22,6 +32,7 @@ live_transcriber: ?Transcriber,
 audio: ?AudioCapture,
 llama: if (has_llm) ?LlamaClient else void,
 log_store: LogStore,
+custom_prompt: ?[]u8 = null,
 
 // Live transcription state
 live_thread: ?std.Thread = null,
@@ -53,7 +64,71 @@ pub fn deinit(self: *App) void {
     if (has_llm) {
         if (self.llama) |*l| l.deinit();
     }
+    if (self.custom_prompt) |cp| self.allocator.free(cp);
     self.log_store.deinit();
+}
+
+fn pathExists(path: []const u8) bool {
+    std.fs.accessAbsolute(path, .{}) catch {
+        return false;
+    };
+    return true;
+}
+
+fn resolveLlmModelPath(self: *App, path_buf: *[std.fs.max_path_bytes]u8) ![]const u8 {
+    std.debug.assert(has_llm);
+
+    const configured_path = self.config.getLlmModelPath();
+    if (std.fs.path.isAbsolute(configured_path) and pathExists(configured_path)) {
+        return configured_path;
+    }
+
+    const models_dir = self.config.getModelsDir();
+    if (!std.fs.path.isAbsolute(models_dir)) {
+        std.log.err("Models directory is not absolute: {s}", .{models_dir});
+        self.notifyError("Models directory path is invalid.");
+        return error.InvalidModelsDirectoryPath;
+    }
+
+    for (llm_model_candidates) |filename| {
+        const candidate_path = std.fmt.bufPrint(path_buf, "{s}/{s}", .{ models_dir, filename }) catch {
+            self.notifyError("LLM model path too long.");
+            return error.PathTooLong;
+        };
+        if (pathExists(candidate_path)) {
+            std.log.info("Using LLM model: {s}", .{candidate_path});
+            return candidate_path;
+        }
+    }
+
+    if (std.fs.path.isAbsolute(configured_path)) {
+        std.log.warn("Configured LLM model not found: {s}", .{configured_path});
+    } else {
+        std.log.warn("Configured LLM model path is not absolute: {s}", .{configured_path});
+    }
+    self.notifyError("LLM model not found. Download a llama or qwen GGUF model.");
+    return error.ModelNotFound;
+}
+
+fn ensureLlamaLoaded(self: *App) !void {
+    if (!has_llm or self.llama != null) {
+        return;
+    }
+
+    var llm_model_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const llm_model_path = try self.resolveLlmModelPath(&llm_model_path_buf);
+
+    self.llama = LlamaClient.init(self.allocator, .{
+        .model_path = llm_model_path,
+        .n_ctx = 512,
+        .n_threads = 4,
+    }) catch |err| {
+        std.log.err("Failed to load LLM model ({s}): {}", .{ llm_model_path, err });
+        self.notifyError("Failed to load LLM model.");
+        return err;
+    };
+
+    std.log.info("LLM model loaded: {s}", .{llm_model_path});
 }
 
 pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
@@ -336,12 +411,7 @@ fn transcribeTail(self: *App, options: c_api.TranscribeOptions) !void {
 
     std.log.info("Transcription complete, text length: {d}", .{final_text.len});
 
-    if (options.use_llm_formatting) {
-        try self.formatText(final_text, options.tone, self.config.on_transcript, self.config.userdata);
-    } else {
-        self.notifyTranscript(final_text, true);
-        self.setStatus(.ready);
-    }
+    try self.finalizeTranscript(final_text, options);
 }
 
 pub fn isRecording(self: *App) bool {
@@ -377,12 +447,7 @@ pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
 
     std.log.info("Transcription complete, text length: {d}", .{raw_text.len});
 
-    if (options.use_llm_formatting) {
-        try self.formatText(raw_text, options.tone, self.config.on_transcript, self.config.userdata);
-    } else {
-        self.notifyTranscript(raw_text, true);
-        self.setStatus(.ready);
-    }
+    try self.finalizeTranscript(raw_text, options);
 }
 
 pub fn formatText(
@@ -401,13 +466,7 @@ pub fn formatText(
         return;
     }
 
-    if (self.llama == null) {
-        self.llama = try LlamaClient.init(self.allocator, .{
-            .model_path = self.config.getLlmModelPath(),
-            .n_ctx = 512,
-            .n_threads = 4,
-        });
-    }
+    try self.ensureLlamaLoaded();
 
     self.setStatus(.formatting);
 
@@ -431,7 +490,71 @@ pub fn formatText(
     self.setStatus(.ready);
 }
 
+/// Shared finalization for transcribe() and transcribeTail().
+/// Sends raw text as a preview, runs LLM formatting if enabled,
+/// delivers the final result, and persists both texts to the log store.
+fn finalizeTranscript(self: *App, raw_text: []const u8, options: c_api.TranscribeOptions) !void {
+    if (!options.use_llm_formatting) {
+        self.notifyTranscript(raw_text, true);
+        self.log_store.appendTranscript(self.allocator, raw_text, null) catch |err| {
+            std.log.warn("Failed to persist transcript: {}", .{err});
+        };
+        self.setStatus(.ready);
+        return;
+    }
+
+    // Send raw text as a non-final preview so the UI shows something immediately
+    self.notifyTranscript(raw_text, false);
+
+    if (!has_llm) {
+        // iOS: no LLM support yet, finalize with raw text
+        self.notifyTranscript(raw_text, true);
+        self.log_store.appendTranscript(self.allocator, raw_text, null) catch |err| {
+            std.log.warn("Failed to persist transcript: {}", .{err});
+        };
+        self.setStatus(.ready);
+        return;
+    }
+
+    try self.ensureLlamaLoaded();
+
+    self.setStatus(.formatting);
+
+    const prompt = try self.buildFormattingPrompt(raw_text, options.tone);
+    defer self.allocator.free(prompt);
+
+    var stream_context = LlmStreamContext{ .app = self };
+
+    const formatted = self.llama.?.generateStreaming(
+        prompt,
+        256,
+        onLlmFormattingPartial,
+        &stream_context,
+    ) catch |err| {
+        std.log.warn("LLM formatting failed: {}, returning raw text", .{err});
+        self.notifyTranscript(raw_text, true);
+        self.log_store.appendTranscript(self.allocator, raw_text, null) catch {};
+        self.setStatus(.ready);
+        return;
+    };
+    defer self.allocator.free(formatted);
+
+    self.notifyTranscript(formatted, true);
+    self.log_store.appendTranscript(self.allocator, raw_text, formatted) catch |err| {
+        std.log.warn("Failed to persist transcript: {}", .{err});
+    };
+    self.setStatus(.ready);
+}
+
 fn buildFormattingPrompt(self: *App, input: []const u8, tone: c_api.Tone) ![]u8 {
+    if (self.custom_prompt) |cp| {
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{s}\n\nInput: {s}\n\nOutput:",
+            .{ cp, input },
+        );
+    }
+
     const base_prompt =
         \\Clean up this transcribed speech. Remove filler words (um, uh, like, you know).
         \\Fix grammar and punctuation. Keep the meaning intact.{s}
@@ -460,14 +583,22 @@ pub fn getAudioLevel(self: *App) f32 {
 pub fn writeSettings(self: *App, settings: c_api.Settings) !void {
     std.debug.assert(self.config.getConfigDomain().len > 0);
     try SettingsStore.write(self.config, settings);
+
+    if (self.custom_prompt) |cp| {
+        self.allocator.free(cp);
+        self.custom_prompt = null;
+    }
+    if (settings.getCustomPrompt()) |prompt| {
+        self.custom_prompt = try self.allocator.dupe(u8, prompt);
+    }
 }
 
 pub fn clearTranscriptLog(self: *App) !void {
     try self.log_store.clear();
 }
 
-pub fn appendTranscriptLog(self: *App, transcript: []const u8) !void {
-    try self.log_store.appendTranscript(self.allocator, transcript);
+pub fn appendTranscriptLog(self: *App, transcript: []const u8, formatted_text: ?[]const u8) !void {
+    try self.log_store.appendTranscript(self.allocator, transcript, formatted_text);
 }
 
 pub fn getTranscriptLogRecentJson(self: *App, limit: usize) !c_api.String {
@@ -487,6 +618,10 @@ pub fn getTranscriptLogRecentJson(self: *App, limit: usize) !c_api.String {
         try json_buffer.writer(self.allocator).print("{d}", .{entry.created_at_unix_ms});
         try json_buffer.appendSlice(self.allocator, ",\"text\":");
         try appendJsonEscapedString(&json_buffer, self.allocator, entry.text);
+        if (entry.formatted_text) |ft| {
+            try json_buffer.appendSlice(self.allocator, ",\"formatted_text\":");
+            try appendJsonEscapedString(&json_buffer, self.allocator, ft);
+        }
         try json_buffer.append(self.allocator, '}');
     }
     try json_buffer.append(self.allocator, ']');
@@ -518,6 +653,19 @@ fn appendJsonEscapedString(
         }
     }
     try buffer.append(allocator, '"');
+}
+
+const LlmStreamContext = struct {
+    app: *App,
+};
+
+fn onLlmFormattingPartial(userdata: ?*anyopaque, partial_text: []const u8) void {
+    if (partial_text.len == 0) {
+        return;
+    }
+    const ptr = userdata orelse return;
+    const context: *LlmStreamContext = @ptrCast(@alignCast(ptr));
+    context.app.notifyTranscript(partial_text, false);
 }
 
 fn setStatus(self: *App, status: c_api.Status) void {
