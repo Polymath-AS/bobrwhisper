@@ -148,7 +148,7 @@ struct NotchOverlayView: View {
     private var transcriptText: some View {
         AnimatedTranscriptView(text: appState.lastTranscript)
             .padding(.horizontal, 14)
-            .padding(.bottom, showTranscript ? 10 : 0)
+            .padding(.bottom, showTranscript ? 6 : 0)
             .frame(maxWidth: .infinity, maxHeight: showTranscript ? .none : 0, alignment: .top)
             .clipped()
             .opacity(showTranscript ? 1 : 0)
