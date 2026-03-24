@@ -9,8 +9,8 @@ struct NotchOverlayView: View {
     var onStopRecording: () -> Void
     var onDismiss: () -> Void
 
-    @State private var dotOpacity: Double = 1.0
     @State private var elapsedSeconds: Int = 0
+    @State private var audioDetected = false
     @State private var showTranscript = false
 
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -42,12 +42,15 @@ struct NotchOverlayView: View {
             }
         }
         .onChange(of: appState.isRecording) { recording in
-            if recording { elapsedSeconds = 0 }
+            if recording { elapsedSeconds = 0; audioDetected = false }
         }
         .onChange(of: isExpanded) { expanded in
             if expanded {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4)) { showTranscript = true }
+                    withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4)) {
+                        showTranscript = true
+                        audioDetected = true
+                    }
                 }
             } else {
                 showTranscript = false
@@ -64,20 +67,26 @@ struct NotchOverlayView: View {
         HStack(spacing: 8) {
             statusDot
 
-            if appState.status == .recording {
-                AudioVisualizerBars(audioLevel: appState.audioLevel)
+            ZStack(alignment: .leading) {
+                Text(statusLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .opacity(audioDetected ? 0 : 1)
+                    .blur(radius: audioDetected ? 4 : 0)
+
+                if appState.status == .recording {
+                    AudioVisualizerBars(audioLevel: appState.audioLevel)
+                        .opacity(audioDetected ? 0.7 : 0)
+                        .blur(radius: audioDetected ? 0 : 4)
+                }
             }
 
             Spacer(minLength: 4)
 
-            Text(statusLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-
             if appState.status == .recording {
                 Text(formatDuration(elapsedSeconds))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.7))
             }
         }
         .padding(.horizontal, 14)
@@ -85,15 +94,11 @@ struct NotchOverlayView: View {
     }
 
     private var statusDot: some View {
-        Circle()
+        let recording = appState.status == .recording
+        return Circle()
             .fill(dotColor)
             .frame(width: 8, height: 8)
-            .opacity(appState.status == .recording ? dotOpacity : 1.0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    dotOpacity = 0.3
-                }
-            }
+            .shadow(color: recording ? .red.opacity(0.9) : .clear, radius: recording ? 4 : 0)
     }
 
     private var dotColor: Color {
@@ -120,7 +125,7 @@ struct NotchOverlayView: View {
     // MARK: - Expanded Content
 
     private var separator: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: 1.5)
             .fill(.white.opacity(0.1))
             .frame(width: isExpanded ? nil : 0, height: isExpanded ? 1 : 0)
             .padding(.horizontal, isExpanded ? 10 : 0)
@@ -275,13 +280,15 @@ private struct FlowLayout: Layout {
 
 struct AudioVisualizerBars: View {
     let audioLevel: Float
-    private let barCount = 4
-    private let barScales: [CGFloat] = [0.5, 1.0, 0.7, 0.85]
+    private let barCount = 5
+    // Center-out envelope: bar 2 (index 2) is center, edges are smallest
+    private let centerScales: [CGFloat] = [0.45, 0.75, 1.0, 0.75, 0.45]
+    private let phaseOffsets: [Double] = [0.0, 0.18, 0.09, 0.25, 0.13]
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { index in
-                AudioBar(level: audioLevel, scale: barScales[index])
+                AudioBar(level: audioLevel, scale: centerScales[index], phaseOffset: phaseOffsets[index])
             }
         }
         .frame(height: 14)
@@ -291,17 +298,18 @@ struct AudioVisualizerBars: View {
 private struct AudioBar: View {
     let level: Float
     let scale: CGFloat
+    let phaseOffset: Double
 
     private var height: CGFloat {
-        let normalised = CGFloat(min(level / 0.15, 1.0))
-        return max(3, normalised * 14 * scale)
+        let normalised = CGFloat(min(level / 0.1, 1.0))
+        return max(2, normalised * 14 * scale)
     }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 1)
-            .fill(.white.opacity(0.5))
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(.white.opacity(1.0))
             .frame(width: 2, height: height)
-            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: level)
+            .animation(.interpolatingSpring(stiffness: 150, damping: 14).delay(phaseOffset * 0.3), value: level)
     }
 }
 
