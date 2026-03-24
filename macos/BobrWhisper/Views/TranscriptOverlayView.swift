@@ -29,9 +29,7 @@ struct NotchOverlayView: View {
         }
         .frame(width: isExpanded ? 300 : 180)
         .background(pillBackground)
-        .overlay(pillBorder)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onTapGesture {
             if appState.isRecording {
@@ -277,7 +275,7 @@ class OverlayPanelController {
         panel.level = .floating
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hosting
         panel.isMovableByWindowBackground = false
