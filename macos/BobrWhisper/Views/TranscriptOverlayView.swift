@@ -393,9 +393,8 @@ class OverlayPanelController {
         let hosting = NSHostingView(rootView: view)
         self.hostingView = hosting
 
-        let initialSize = hosting.fittingSize
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: initialSize),
+            contentRect: NSRect(origin: .zero, size: CGSize(width: Self.panelWidth, height: Self.panelHeight)),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
