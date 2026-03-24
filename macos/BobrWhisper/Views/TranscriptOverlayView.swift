@@ -11,6 +11,7 @@ struct NotchOverlayView: View {
 
     @State private var dotOpacity: Double = 1.0
     @State private var elapsedSeconds: Int = 0
+    @State private var showTranscript = false
 
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -21,11 +22,8 @@ struct NotchOverlayView: View {
     var body: some View {
         VStack(spacing: 0) {
             compactBar
-
-            if isExpanded {
-                separator
-                transcriptText
-            }
+            separator
+            transcriptText
         }
         .frame(width: isExpanded ? 300 : 180)
         .background(pillBackground)
@@ -46,7 +44,18 @@ struct NotchOverlayView: View {
         .onChange(of: appState.isRecording) { recording in
             if recording { elapsedSeconds = 0 }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: isExpanded)
+        .onChange(of: isExpanded) { expanded in
+            if expanded {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4)) { showTranscript = true }
+                }
+            } else {
+                showTranscript = false
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.5), value: isExpanded)
+        .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4), value: showTranscript)
     }
 
     // MARK: - Compact Bar
@@ -112,21 +121,18 @@ struct NotchOverlayView: View {
 
     private var separator: some View {
         Rectangle()
-            .fill(.white.opacity(0.08))
-            .frame(height: 0.5)
-            .padding(.horizontal, 10)
+            .fill(.white.opacity(0.1))
+            .frame(width: isExpanded ? nil : 0, height: isExpanded ? 1 : 0)
+            .padding(.horizontal, isExpanded ? 10 : 0)
     }
 
     private var transcriptText: some View {
-        Text(appState.lastTranscript)
-            .font(.system(size: 12))
-            .foregroundStyle(.white.opacity(0.85))
-            .lineLimit(3)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        AnimatedTranscriptView(text: appState.lastTranscript)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .padding(.bottom, showTranscript ? 10 : 0)
+            .frame(maxHeight: showTranscript ? .none : 0)
+            .clipped()
+            .opacity(showTranscript ? 1 : 0)
     }
 
     // MARK: - Pill Shape
@@ -147,6 +153,121 @@ struct NotchOverlayView: View {
 
     private func formatDuration(_ totalSeconds: Int) -> String {
         String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+// MARK: - Animated Transcript View
+
+struct AnimatedTranscriptView: View {
+    let text: String
+    @State private var words: [Word] = []
+    @State private var contentHeight: CGFloat = 0
+
+    private let maxHeight: CGFloat = 66
+    private var clampedHeight: CGFloat { min(contentHeight + 10, maxHeight) }
+    private var isOverflowing: Bool { contentHeight + 10 > maxHeight }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                FlowLayout(spacing: 4) {
+                    ForEach(words) { word in
+                        WordView(word: word)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 10)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: HeightKey.self, value: geo.size.height)
+                })
+                Color.clear.frame(height: 1).id("bottom")
+            }
+            .frame(maxWidth: .infinity, maxHeight: clampedHeight, alignment: .topLeading)
+            .mask(
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: isOverflowing ? 16 : 0)
+                    Color.black
+                }
+            )
+            .onPreferenceChange(HeightKey.self) { newHeight in
+                withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.35)) { contentHeight = newHeight }
+            }
+            .onChange(of: text) { newText in
+                updateWords(from: newText)
+                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func updateWords(from newText: String) {
+        let incoming = newText.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        let old = words
+        words = incoming.enumerated().map { i, text in
+            if i < old.count, old[i].text == text { return old[i] }
+            return Word(text: text, isNew: i >= old.count)
+        }
+    }
+
+    private struct WordView: View {
+        let word: Word
+        @State private var appeared = false
+
+        var body: some View {
+            Text(word.text)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(appeared ? 1 : 0))
+                .blur(radius: appeared ? 0 : (word.isNew ? 3 : 0))
+                .offset(y: appeared ? 0 : (word.isNew ? 2 : 0))
+                .onAppear {
+                    guard !appeared else { return }
+                    withAnimation(word.isNew
+                        ? .timingCurve(0.25, 0.1, 0.25, 1.0, duration: 0.45)
+                        : .easeIn(duration: 0.2)
+                    ) { appeared = true }
+                }
+        }
+    }
+
+    private struct Word: Identifiable {
+        let id = UUID()
+        let text: String
+        let isNew: Bool
+    }
+
+    private struct HeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
+}
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        layout(in: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (i, offset) in layout(in: bounds.width, subviews: subviews).offsets.enumerated() {
+            subviews[i].place(at: CGPoint(x: bounds.minX + offset.x, y: bounds.minY + offset.y), proposal: .unspecified)
+        }
+    }
+
+    private func layout(in maxWidth: CGFloat, subviews: Subviews) -> (size: CGSize, offsets: [CGPoint]) {
+        var offsets: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for sub in subviews {
+            let s = sub.sizeThatFits(.unspecified)
+            if x + s.width > maxWidth, x > 0 {
+                y += rowHeight + spacing
+                x = 0; rowHeight = 0
+            }
+            offsets.append(CGPoint(x: x, y: y))
+            x += s.width + spacing
+            rowHeight = max(rowHeight, s.height)
+        }
+        return (CGSize(width: maxWidth, height: y + rowHeight), offsets)
     }
 }
 
@@ -290,17 +411,17 @@ class OverlayPanelController {
         }
     }
 
+    private static let panelWidth: CGFloat = 320
+    private static let panelHeight: CGFloat = 140
+
     private func updatePanelFrame() {
-        guard let hosting = hostingView, let panel = panel else { return }
-        let size = hosting.fittingSize
-        guard size.width > 0, size.height > 0 else { return }
-        guard let screen = NSScreen.main else { return }
+        guard let panel = panel, let screen = NSScreen.main else { return }
 
         let topY = screen.visibleFrame.maxY
-        let x = screen.frame.midX - size.width / 2
-        let y = topY - size.height - 4
+        let x = screen.frame.midX - Self.panelWidth / 2
+        let y = topY - Self.panelHeight - 4
 
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        panel.setFrame(NSRect(x: x, y: y, width: Self.panelWidth, height: Self.panelHeight), display: true)
     }
 
     private func positionPanel() {
