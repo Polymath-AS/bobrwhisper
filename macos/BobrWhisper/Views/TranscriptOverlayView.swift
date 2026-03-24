@@ -16,16 +16,16 @@ struct NotchOverlayView: View {
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var isExpanded: Bool {
-        !appState.lastTranscript.isEmpty
+        !appState.lastTranscript.isEmpty && appState.status != .ready
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             compactBar
             separator
             transcriptText
         }
-        .frame(width: isExpanded ? 300 : 180)
+        .frame(width: isExpanded ? 300 : 180, alignment: .leading)
         .background(pillBackground)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -56,8 +56,21 @@ struct NotchOverlayView: View {
                 showTranscript = false
             }
         }
+        .onChange(of: appState.status) { status in
+            if status == .ready {
+                withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.2)) {
+                    showTranscript = false
+                    audioDetected = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.5)) {
+                        _ = isExpanded
+                    }
+                }
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.5), value: isExpanded)
+        .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4), value: isExpanded)
         .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4), value: showTranscript)
     }
 
@@ -81,7 +94,7 @@ struct NotchOverlayView: View {
                 }
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 0)
 
             if appState.status == .recording {
                 Text(formatDuration(elapsedSeconds))
@@ -91,6 +104,7 @@ struct NotchOverlayView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statusDot: some View {
@@ -117,7 +131,7 @@ struct NotchOverlayView: View {
         case .recording: return "Listening"
         case .transcribing: return "Transcribing…"
         case .formatting: return "Formatting…"
-        case .ready: return "Done"
+        case .ready: return "Transcript saved"
         case .error: return "Error"
         }
     }
@@ -135,7 +149,7 @@ struct NotchOverlayView: View {
         AnimatedTranscriptView(text: appState.lastTranscript)
             .padding(.horizontal, 14)
             .padding(.bottom, showTranscript ? 10 : 0)
-            .frame(maxHeight: showTranscript ? .none : 0)
+            .frame(maxWidth: .infinity, maxHeight: showTranscript ? .none : 0, alignment: .top)
             .clipped()
             .opacity(showTranscript ? 1 : 0)
     }
