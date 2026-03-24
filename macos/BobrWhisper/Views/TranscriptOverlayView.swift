@@ -182,9 +182,10 @@ struct AnimatedTranscriptView: View {
     @State private var words: [Word] = []
     @State private var contentHeight: CGFloat = 0
 
-    private let maxHeight: CGFloat = 66
-    private var clampedHeight: CGFloat { min(contentHeight + 10, maxHeight) }
-    private var isOverflowing: Bool { contentHeight + 10 > maxHeight }
+    private let maxDisplayHeight: CGFloat = 72
+    private let overflowThreshold: CGFloat = 80
+    private var clampedHeight: CGFloat { min(contentHeight + 10, maxDisplayHeight) }
+    private var isOverflowing: Bool { contentHeight + 10 > overflowThreshold }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -203,14 +204,15 @@ struct AnimatedTranscriptView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: clampedHeight, alignment: .topLeading)
             .mask(
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: isOverflowing ? 16 : 0)
-                    Color.black
-                }
+                LinearGradient(
+                    colors: [isOverflowing ? .clear : .black, .black],
+                    startPoint: .top,
+                    endPoint: .center
+                )
+                .animation(.easeInOut(duration: 0.3), value: isOverflowing)
             )
             .onPreferenceChange(HeightKey.self) { newHeight in
-                withAnimation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.35)) { contentHeight = newHeight }
+                contentHeight = newHeight
             }
             .onChange(of: text) { newText in
                 updateWords(from: newText)
