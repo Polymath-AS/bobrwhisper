@@ -297,9 +297,8 @@ private struct FlowLayout: Layout {
 struct AudioVisualizerBars: View {
     let audioLevel: Float
     private let barCount = 5
-    // Center-out envelope: bar 2 (index 2) is center, edges are smallest
     private let centerScales: [CGFloat] = [0.45, 0.75, 1.0, 0.75, 0.45]
-    private let phaseOffsets: [Double] = [0.0, 0.18, 0.09, 0.25, 0.13]
+    private let phaseOffsets: [Double] = [0.05, 0.18, 0.09, 0.25, 0.13]
 
     var body: some View {
         HStack(spacing: 2) {
@@ -325,7 +324,7 @@ private struct AudioBar: View {
         RoundedRectangle(cornerRadius: 1.5)
             .fill(.white.opacity(1.0))
             .frame(width: 2, height: height)
-            .animation(.interpolatingSpring(stiffness: 150, damping: 14).delay(phaseOffset * 0.3), value: level)
+            .animation(.interpolatingSpring(stiffness: 280, damping: 16).delay(phaseOffset * 0.3), value: level)
     }
 }
 
