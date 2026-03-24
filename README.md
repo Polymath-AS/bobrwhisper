@@ -30,7 +30,7 @@
 
 ## Requirements
 
-- macOS 13+ (Apple Silicon recommended)
+- macOS 15+ (Apple Silicon recommended)
 - Zig 0.15.0+
 - Xcode 15+
 
