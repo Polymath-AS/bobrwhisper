@@ -11,9 +11,9 @@
 		A100000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000002 /* AppDelegate.swift */; };
 		A100000000000003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000003 /* AppState.swift */; };
 		A100000000000004 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000004 /* MenuBarView.swift */; };
-		A100000000000007 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000007 /* MainWindowView.swift */; };
 		A100000000000005 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000005 /* SettingsView.swift */; };
 		A100000000000006 /* TranscriptOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000006 /* TranscriptOverlayView.swift */; };
+		A100000000000007 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000007 /* MainWindowView.swift */; };
 		A100000000000010 /* BobrWhisperKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A200000000000010 /* BobrWhisperKit.xcframework */; };
 		A100000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A200000000000011 /* Assets.xcassets */; };
 		A100000000000012 /* silero-v6.2.0.bin in Resources */ = {isa = PBXBuildFile; fileRef = A200000000000012 /* silero-v6.2.0.bin */; };
@@ -24,14 +24,14 @@
 		A200000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A200000000000003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A200000000000004 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
-		A200000000000007 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		A200000000000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A200000000000006 /* TranscriptOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptOverlayView.swift; sourceTree = "<group>"; };
+		A200000000000007 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		A200000000000010 /* BobrWhisperKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = BobrWhisperKit.xcframework; sourceTree = "<group>"; };
 		A200000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A200000000000012 /* silero-v6.2.0.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = "silero-v6.2.0.bin"; path = "../../resources/silero-v6.2.0.bin"; sourceTree = "<group>"; };
 		A200000000000020 /* BobrWhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BobrWhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A200000000000021 /* BobrWhisper.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BobrWhisper.entitlements; sourceTree = "<group>"; };
-		A200000000000012 /* silero-v6.2.0.bin */ = {isa = PBXFileReference; lastKnownFileType = file; name = "silero-v6.2.0.bin"; path = "../../resources/silero-v6.2.0.bin"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,7 +124,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					A500000000000001 = {
 						CreatedOnToolsVersion = 15.0;
@@ -190,6 +190,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
@@ -198,6 +199,9 @@
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
@@ -206,9 +210,11 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -228,6 +234,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -244,6 +251,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
@@ -252,6 +260,9 @@
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
@@ -260,9 +271,11 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -275,6 +288,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -288,7 +302,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -303,9 +319,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				OTHER_LDFLAGS = (
 					"-framework",
 					AudioToolbox,
@@ -320,6 +335,8 @@
 					"-lc++",
 					"-lsqlite3",
 				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -334,7 +351,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -349,9 +368,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				OTHER_LDFLAGS = (
 					"-framework",
 					AudioToolbox,
@@ -366,6 +384,8 @@
 					"-lc++",
 					"-lsqlite3",
 				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bobrwhisper.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainWindowView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -58,7 +59,7 @@ struct MainWindowView: View {
                 .disabled(appState.transcriptLog.isEmpty)
 
                 Button("Settings") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    openSettings()
                 }
             }
         }
