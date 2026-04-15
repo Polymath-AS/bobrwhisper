@@ -95,8 +95,11 @@ class AppState: ObservableObject {
             DispatchQueue.main.async {
                 appState.lastTranscript = transcript
                 if isFinal {
-                    appState.appendTranscriptLogEntry(transcript, persistToStore: true)
-                    appState.pasteToActiveApp()
+                    let finalTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !finalTranscript.isEmpty {
+                        appState.appendTranscriptLogEntry(transcript, persistToStore: true)
+                        appState.pasteToActiveApp()
+                    }
                     appState.overlayController?.scheduleAutoDismiss()
                 }
             }
