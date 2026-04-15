@@ -71,6 +71,7 @@ typedef struct {
     bool remove_filler_words;
     bool auto_punctuate;
     bool use_llm_formatting;
+    const char* custom_prompt;
 } bobrwhisper_settings_s;
 
 int bobrwhisper_init(void);

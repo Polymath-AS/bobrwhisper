@@ -140,6 +140,14 @@ pub const Settings = extern struct {
     remove_filler_words: bool,
     auto_punctuate: bool,
     use_llm_formatting: bool,
+    custom_prompt: ?[*:0]const u8,
+
+    pub fn getCustomPrompt(self: Settings) ?[]const u8 {
+        if (self.custom_prompt) |ptr| {
+            return std.mem.span(ptr);
+        }
+        return null;
+    }
 };
 
 pub const TranscribeOptions = extern struct {

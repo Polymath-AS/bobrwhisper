@@ -163,7 +163,7 @@ pub export fn bobrwhisper_format_text(
 
 pub export fn bobrwhisper_log_transcript(app: ?*App, transcript: c.String) bool {
     const a = app orelse return false;
-    a.appendTranscriptLog(transcript.toSlice()) catch return false;
+    a.appendTranscriptLog(transcript.toSlice(), null) catch return false;
     return true;
 }
 
