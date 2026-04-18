@@ -4,16 +4,13 @@ const std = @import("std");
 
 const WhisperCppAdapter = @This();
 const builtin = @import("builtin");
-
-const c = @cImport({
-    @cInclude("whisper.h");
-});
+const bridge = @import("whisper_bridge.zig");
 
 allocator: std.mem.Allocator,
 model_path: []const u8,
 language: []const u8,
 n_threads: u32,
-ctx: ?*c.whisper_context = null,
+ctx: ?*bridge.Context = null,
 // VAD config
 vad_enabled: bool,
 vad_model_path: ?[:0]const u8,
@@ -46,14 +43,12 @@ fn shouldUseGpu() bool {
     return true;
 }
 
-fn nullLogCallback(_: c.ggml_log_level, _: [*c]const u8, _: ?*anyopaque) callconv(.c) void {}
-
 pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
     std.debug.assert(config.model_path.len > 0);
     std.debug.assert(config.language.len > 0);
 
     // Suppress whisper.cpp logs
-    c.whisper_log_set(nullLogCallback, null);
+    bridge.bobrwhisper_whisper_disable_logging();
 
     const model_path_z = try allocator.dupeZ(u8, config.model_path);
     defer allocator.free(model_path_z);
@@ -63,9 +58,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
         return error.ModelNotFound;
     };
 
-    var cparams = c.whisper_context_default_params();
-    cparams.use_gpu = shouldUseGpu();
-    const ctx = c.whisper_init_from_file_with_params(model_path_z.ptr, cparams);
+    const ctx = bridge.bobrwhisper_whisper_init(model_path_z.ptr, shouldUseGpu());
     if (ctx == null) {
         std.log.err("Failed to initialize whisper context", .{});
         return error.WhisperInitFailed;
@@ -89,7 +82,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
 
 pub fn deinit(self: *WhisperCppAdapter) void {
     if (self.ctx) |ctx| {
-        c.whisper_free(ctx);
+        bridge.bobrwhisper_whisper_free(ctx);
     }
     self.allocator.free(self.model_path);
     self.allocator.free(self.language);
@@ -120,43 +113,30 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         return error.NoAudioData;
     }
 
-    var wparams = c.whisper_full_default_params(c.WHISPER_SAMPLING_GREEDY);
-    wparams.print_realtime = false;
-    wparams.print_progress = false;
-    wparams.print_timestamps = false;
-    wparams.print_special = false;
-    wparams.translate = false;
-    wparams.no_timestamps = true;
-    wparams.n_threads = @intCast(self.n_threads);
-
-    if (live) {
-        wparams.single_segment = true;
-        wparams.no_context = true;
-    }
-
-    // VAD configuration
-    wparams.vad = self.vad_enabled;
-    if (self.vad_model_path) |vad_path| {
-        wparams.vad_model_path = vad_path.ptr;
-    }
-    wparams.vad_params.threshold = self.vad_threshold;
-    wparams.vad_params.min_speech_duration_ms = self.vad_min_speech_ms;
-    wparams.vad_params.min_silence_duration_ms = self.vad_min_silence_ms;
-    wparams.vad_params.speech_pad_ms = self.vad_speech_pad_ms;
-
-    var lang_buf: [8]u8 = undefined;
-    @memset(&lang_buf, 0);
+    var lang_buf: [8:0]u8 = [_:0]u8{0} ** 8;
     const lang_len = @min(language.len, lang_buf.len - 1);
     @memcpy(lang_buf[0..lang_len], language[0..lang_len]);
-    wparams.language = &lang_buf;
 
-    const result = c.whisper_full(ctx, wparams, samples.ptr, @intCast(samples.len));
+    const result = bridge.bobrwhisper_whisper_transcribe(
+        ctx,
+        samples.ptr,
+        @intCast(samples.len),
+        lang_buf[0..].ptr,
+        @intCast(self.n_threads),
+        live,
+        self.vad_enabled,
+        if (self.vad_model_path) |vad_path| vad_path.ptr else null,
+        self.vad_threshold,
+        self.vad_min_speech_ms,
+        self.vad_min_silence_ms,
+        self.vad_speech_pad_ms,
+    );
     if (result != 0) {
         std.log.err("whisper_full failed: {}", .{result});
         return error.TranscriptionFailed;
     }
 
-    const n_segments = c.whisper_full_n_segments(ctx);
+    const n_segments = bridge.bobrwhisper_whisper_segment_count(ctx);
     if (n_segments == 0) {
         return try self.allocator.dupe(u8, "");
     }
@@ -165,10 +145,10 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
     errdefer output.deinit(self.allocator);
 
     for (0..@as(usize, @intCast(n_segments))) |i| {
-        const segment_text = c.whisper_full_get_segment_text(ctx, @intCast(i));
-        if (segment_text != null) {
-            const text_slice = std.mem.span(segment_text);
-            try output.appendSlice(self.allocator, text_slice);
+        const segment_text = bridge.bobrwhisper_whisper_segment_text(ctx, @intCast(i));
+        if (segment_text) |text_ptr| {
+            const text_slice = std.mem.span(text_ptr);
+            try output.appendSlice(self.allocator, text_slice[0..text_slice.len]);
         }
     }
 

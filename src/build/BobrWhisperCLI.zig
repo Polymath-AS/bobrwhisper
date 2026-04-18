@@ -1,4 +1,5 @@
 const std = @import("std");
+const AsrBuild = @import("AsrBuild.zig");
 const SharedDeps = @import("SharedDeps.zig");
 
 pub const BobrWhisperCLI = @This();
@@ -12,13 +13,7 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperCLI {
     // trigger Zig's runtime safety checks (null pointer offset) in Debug mode
     const cli_optimize: std.builtin.OptimizeMode = if (deps.optimize == .Debug) .ReleaseFast else deps.optimize;
     const cli_deps = try deps.retargetWithOptimize(b, deps.target, cli_optimize);
-    const asr_module = b.createModule(.{
-        .root_source_file = b.path("pkg/asr/main.zig"),
-        .target = deps.target,
-        .optimize = cli_optimize,
-    });
-    asr_module.addIncludePath(cli_deps.whisper.include_path);
-    asr_module.addIncludePath(cli_deps.llama.ggml_include_path);
+    const asr_module = AsrBuild.createModule(b, &cli_deps, deps.target, cli_optimize);
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/cli.zig"),
         .target = deps.target,
@@ -30,6 +25,7 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperCLI {
         .name = "bobrwhisper-cli",
         .root_module = root_module,
     });
+    AsrBuild.addWhisperBridge(b, exe, &cli_deps, cli_optimize);
 
     try cli_deps.link(b, exe);
 

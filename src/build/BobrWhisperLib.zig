@@ -1,4 +1,5 @@
 const std = @import("std");
+const AsrBuild = @import("AsrBuild.zig");
 const SharedDeps = @import("SharedDeps.zig");
 const LibtoolStep = @import("LibtoolStep.zig");
 
@@ -9,13 +10,7 @@ output: std.Build.LazyPath,
 lib: ?*std.Build.Step.Compile = null,
 
 pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
-    const asr_module = b.createModule(.{
-        .root_source_file = b.path("pkg/asr/main.zig"),
-        .target = deps.target,
-        .optimize = deps.optimize,
-    });
-    asr_module.addIncludePath(deps.whisper.include_path);
-    asr_module.addIncludePath(deps.llama.ggml_include_path);
+    const asr_module = AsrBuild.createModule(b, deps, deps.target, deps.optimize);
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = deps.target,
@@ -28,6 +23,7 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
         .root_module = root_module,
         .linkage = .static,
     });
+    AsrBuild.addWhisperBridge(b, lib, deps, deps.optimize);
 
     try deps.link(b, lib);
 
@@ -39,13 +35,7 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
 }
 
 pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
-    const asr_module = b.createModule(.{
-        .root_source_file = b.path("pkg/asr/main.zig"),
-        .target = deps.target,
-        .optimize = deps.optimize,
-    });
-    asr_module.addIncludePath(deps.whisper.include_path);
-    asr_module.addIncludePath(deps.llama.ggml_include_path);
+    const asr_module = AsrBuild.createModule(b, deps, deps.target, deps.optimize);
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = deps.target,
@@ -58,6 +48,7 @@ pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
         .root_module = root_module,
         .linkage = .static,
     });
+    AsrBuild.addWhisperBridge(b, lib, deps, deps.optimize);
 
     try deps.link(b, lib);
     lib.bundle_compiler_rt = true;

@@ -4,13 +4,7 @@ const buildpkg = @import("src/build/main.zig");
 pub fn build(b: *std.Build) !void {
     const config = buildpkg.Config.init(b);
     const deps = try buildpkg.SharedDeps.init(b, &config);
-    const asr_module = b.createModule(.{
-        .root_source_file = b.path("pkg/asr/main.zig"),
-        .target = config.target,
-        .optimize = config.optimize,
-    });
-    asr_module.addIncludePath(deps.whisper.include_path);
-    asr_module.addIncludePath(deps.llama.ggml_include_path);
+    const asr_module = buildpkg.AsrBuild.createModule(b, &deps, config.target, config.optimize);
 
     // Steps
     const run_cli_step = b.step("run-cli", "Run CLI");
@@ -57,6 +51,7 @@ pub fn build(b: *std.Build) !void {
     const lib_tests = b.addTest(.{
         .root_module = test_root_module,
     });
+    buildpkg.AsrBuild.addWhisperBridge(b, lib_tests, &deps, config.optimize);
     try deps.link(b, lib_tests);
     test_step.dependOn(&b.addRunArtifact(lib_tests).step);
 }

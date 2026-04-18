@@ -1,4 +1,5 @@
 pub const AppleSdk = @import("AppleSdk.zig");
+pub const AsrBuild = @import("AsrBuild.zig");
 pub const Config = @import("Config.zig");
 pub const SharedDeps = @import("SharedDeps.zig");
 pub const BobrWhisperLib = @import("BobrWhisperLib.zig");
