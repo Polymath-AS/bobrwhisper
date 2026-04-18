@@ -71,13 +71,13 @@ struct ModelsSettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("defaultModel") private var defaultModelKey: String = ""
     
-    private var defaultModel: ModelSize? {
-        ModelSize.fromStorageKey(defaultModelKey)
+    private var defaultModelID: String {
+        resolveLegacyStoredModelID(defaultModelKey)
     }
     
-    private func modelStatus(_ size: ModelSize) -> String {
-        if appState.modelExists(size) {
-            if defaultModel == size {
+    private func modelStatus(_ model: SpeechModelDescriptor) -> String {
+        if appState.modelExists(model) {
+            if defaultModelID == model.id {
                 return "Downloaded (Default)"
             }
             return "Downloaded"
@@ -88,34 +88,34 @@ struct ModelsSettingsView: View {
     
     var body: some View {
         Form {
-            Section("Whisper Model") {
-                ForEach(ModelSize.allCases) { size in
+            Section("Speech Models") {
+                ForEach(appState.availableModels) { model in
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(size.rawValue)
-                            Text(modelStatus(size))
+                            Text(model.displayName)
+                            Text(modelStatus(model))
                                 .font(.caption)
-                                .foregroundColor(appState.modelExists(size) ? .green : .secondary)
+                                .foregroundColor(appState.modelExists(model) ? .green : .secondary)
                         }
                         
                         Spacer()
                         
-                        if appState.modelExists(size) {
-                            if appState.selectedWhisperModel == size && appState.isModelLoaded {
+                        if appState.modelExists(model) {
+                            if appState.selectedModelID == model.id && appState.isModelLoaded {
                                 Button("Loaded") {}
                                     .disabled(true)
                                     .buttonStyle(.borderedProminent)
                             } else {
                                 Button("Load") {
-                                    appState.selectedWhisperModel = size
+                                    appState.selectedModelID = model.id
                                     appState.loadModel()
                                 }
                                 .buttonStyle(.bordered)
                             }
                         } else {
                             Button("Download") {
-                                appState.selectedWhisperModel = size
-                                appState.downloadModel(size)
+                                appState.selectedModelID = model.id
+                                appState.downloadModel(model)
                             }
                             .disabled(appState.isDownloading)
                             .buttonStyle(.bordered)
