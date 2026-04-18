@@ -85,10 +85,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func updateUI() {
         let state = KeyboardStateSnapshot()
-        let hasModelFile = state.selectedModelFilename.map {
-            FileManager.default.fileExists(atPath: KeyboardSharedState.modelsDirectory().appendingPathComponent($0).path)
-        } ?? false
-        let canRecord = state.isModelLoaded && hasModelFile
+        let canRecord = state.isModelLoaded && state.selectedModelID != nil
 
         micButton.isEnabled = canRecord
         micButton.alpha = canRecord ? 1.0 : 0.5

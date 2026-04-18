@@ -148,7 +148,7 @@ struct ContentView: View {
             Text("No Model Loaded")
                 .font(.headline)
             
-            Text("Download and load a Whisper model to start transcribing")
+            Text("Download and load a speech model to start transcribing")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

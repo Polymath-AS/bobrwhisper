@@ -12,14 +12,14 @@ enum KeyboardStatus: Int {
 struct KeyboardStateSnapshot {
     let isRecording: Bool
     let isModelLoaded: Bool
-    let selectedModelFilename: String?
+    let selectedModelID: String?
     let transcript: String
     let status: KeyboardStatus?
 
     init() {
         isRecording = KeyboardSharedState.readIsRecording() ?? false
         isModelLoaded = KeyboardSharedState.readIsModelLoaded() ?? false
-        selectedModelFilename = KeyboardSharedState.readSelectedModelFilename()
+        selectedModelID = KeyboardSharedState.readSelectedModelID()
         transcript = KeyboardSharedState.readTranscript() ?? ""
         if let raw = KeyboardSharedState.readStatusRaw() {
             status = KeyboardStatus(rawValue: raw)

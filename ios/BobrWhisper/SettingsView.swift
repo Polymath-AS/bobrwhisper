@@ -25,12 +25,12 @@ struct SettingsView: View {
     
     private var modelSection: some View {
         Section {
-            ForEach(ModelSize.allCases) { size in
-                ModelRow(size: size)
+            ForEach(appState.availableModels) { model in
+                ModelRow(model: model)
                     .environmentObject(appState)
             }
         } header: {
-            Text("Whisper Model")
+            Text("Speech Models")
         } footer: {
             Text("Larger models are more accurate but slower and use more memory. Models are stored locally on your device.")
         }
@@ -84,19 +84,19 @@ struct SettingsView: View {
 }
 
 struct ModelRow: View {
-    let size: ModelSize
+    let model: SpeechModelDescriptor
     @EnvironmentObject var appState: AppState
     
     private var isDownloaded: Bool {
-        appState.modelExists(size)
+        appState.modelExists(model)
     }
     
     private var isSelected: Bool {
-        appState.selectedModel == size && appState.isModelLoaded
+        appState.selectedModelID == model.id && appState.isModelLoaded
     }
     
     private var isDownloading: Bool {
-        appState.isDownloading && appState.selectedModel == size
+        appState.isDownloading && appState.selectedModelID == model.id
     }
     
     var body: some View {
@@ -104,7 +104,7 @@ struct ModelRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(size.rawValue)
+                        Text(model.displayName)
                             .font(.headline)
                         
                         if isSelected {
@@ -113,7 +113,7 @@ struct ModelRow: View {
                         }
                     }
                     
-                    Text(size.sizeDescription)
+                    Text(model.detailsText)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -151,23 +151,20 @@ struct ModelRow: View {
                 .progressViewStyle(.circular)
         } else if !isDownloaded {
             Button("Download") {
-                appState.selectedModel = size
-                KeyboardSharedState.writeSelectedModelFilename(size.filename)
-                appState.downloadModel(size)
+                appState.selectedModelID = model.id
+                appState.downloadModel(model)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
         } else if isSelected {
             Button("Unload") {
                 appState.unloadModel()
-                KeyboardSharedState.writeSelectedModelFilename(nil)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
         } else {
             Button("Load") {
-                appState.selectedModel = size
-                KeyboardSharedState.writeSelectedModelFilename(size.filename)
+                appState.selectedModelID = model.id
                 appState.loadModel()
             }
             .buttonStyle(.bordered)

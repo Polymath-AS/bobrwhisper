@@ -7,7 +7,7 @@ enum KeyboardSharedState {
     private static let statusKey = "keyboard.status"
     private static let isRecordingKey = "keyboard.isRecording"
     private static let isModelLoadedKey = "keyboard.isModelLoaded"
-    private static let selectedModelFilenameKey = "keyboard.selectedModelFilename"
+    private static let selectedModelIDKey = "keyboard.selectedModelID"
 
     private static func userDefaults() -> UserDefaults? {
         UserDefaults(suiteName: appGroupID)
@@ -53,18 +53,18 @@ enum KeyboardSharedState {
         userDefaults()?.object(forKey: isModelLoadedKey) as? Bool
     }
 
-    static func writeSelectedModelFilename(_ filename: String?) {
+    static func writeSelectedModelID(_ modelID: String?) {
         guard let defaults = userDefaults() else {
             return
         }
-        if let filename = filename {
-            defaults.set(filename, forKey: selectedModelFilenameKey)
+        if let modelID = modelID {
+            defaults.set(modelID, forKey: selectedModelIDKey)
         } else {
-            defaults.removeObject(forKey: selectedModelFilenameKey)
+            defaults.removeObject(forKey: selectedModelIDKey)
         }
     }
 
-    static func readSelectedModelFilename() -> String? {
-        userDefaults()?.string(forKey: selectedModelFilenameKey)
+    static func readSelectedModelID() -> String? {
+        userDefaults()?.string(forKey: selectedModelIDKey)
     }
 }

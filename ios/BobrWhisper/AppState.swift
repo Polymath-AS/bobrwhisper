@@ -13,7 +13,8 @@ class AppState: ObservableObject {
     @Published var downloadProgress: Double = 0
     @Published private(set) var transcriptLog: [TranscriptLogEntry] = []
     
-    @Published var selectedModel: ModelSize = .small
+    @Published private(set) var availableModels: [SpeechModelDescriptor] = []
+    @Published var selectedModelID: String = defaultSpeechModelID
     @Published var tone: Tone = .neutral
     @Published var removeFillerWords: Bool = true
     @Published var autoPunctuate: Bool = true
@@ -64,6 +65,40 @@ class AppState: ObservableObject {
     init() {
         setupAudioSession()
     }
+
+    private func refreshAvailableModels() {
+        availableModels = Self.loadAvailableModels(app)
+        if let selectedModel = resolveModel(id: selectedModelID) {
+            selectedModelID = selectedModel.id
+            return
+        }
+        if let defaultModel = resolveModel(id: defaultSpeechModelID) {
+            selectedModelID = defaultModel.id
+        } else if let firstModel = availableModels.first {
+            selectedModelID = firstModel.id
+        }
+    }
+
+    private static func loadAvailableModels(_ app: bobrwhisper_app_t?) -> [SpeechModelDescriptor] {
+        let count = Int(bobrwhisper_model_count(app))
+        guard count > 0 else { return [] }
+
+        var models: [SpeechModelDescriptor] = []
+        models.reserveCapacity(count)
+
+        for index in 0..<count {
+            var descriptor = bobrwhisper_model_descriptor_s()
+            guard bobrwhisper_model_descriptor_at(app, index, &descriptor) else { continue }
+            guard let model = SpeechModelDescriptor(rawDescriptor: descriptor) else { continue }
+            models.append(model)
+        }
+
+        return models
+    }
+
+    func resolveModel(id: String) -> SpeechModelDescriptor? {
+        availableModels.first { $0.id == id }
+    }
     
     private func setupAudioSession() {
         do {
@@ -84,6 +119,7 @@ class AppState: ObservableObject {
         try? FileManager.default.createDirectory(atPath: modelsDir, withIntermediateDirectories: true)
         KeyboardSharedState.writeIsRecording(false)
         KeyboardSharedState.writeIsModelLoaded(false)
+        KeyboardSharedState.writeSelectedModelID(nil)
         KeyboardSharedState.writeTranscript("")
         KeyboardSharedState.writeStatusRaw(Int(Status.idle.rawValue))
 
@@ -157,7 +193,19 @@ class AppState: ObservableObject {
             return
         }
 
+        refreshAvailableModels()
         loadTranscriptLogFromStore()
+        loadDefaultModel()
+    }
+
+    private func loadDefaultModel() {
+        guard let key = UserDefaults.standard.string(forKey: "defaultModel") else { return }
+
+        let resolvedModelID = resolveLegacyStoredModelID(key)
+        guard let model = resolveModel(id: resolvedModelID), modelExists(model) else { return }
+
+        selectedModelID = model.id
+        loadModel()
     }
     
     func destroyApp() {
@@ -168,6 +216,8 @@ class AppState: ObservableObject {
         if let ptr = modelsDirCString { free(ptr); modelsDirCString = nil }
         if let ptr = vadModelPathCString { free(ptr); vadModelPathCString = nil }
         KeyboardSharedState.writeIsRecording(false)
+        KeyboardSharedState.writeIsModelLoaded(false)
+        KeyboardSharedState.writeSelectedModelID(nil)
     }
     
     func startRecording() {
@@ -217,18 +267,21 @@ class AppState: ObservableObject {
         }
     }
     
-    func modelExists(_ size: ModelSize) -> Bool {
+    func modelExists(_ model: SpeechModelDescriptor) -> Bool {
         guard let app = app else {
-            // Fallback to FileManager if app not initialized
-            let modelPath = modelsDirectory.appendingPathComponent(size.filename)
+            let modelPath = modelsDirectory.appendingPathComponent(model.localFilename)
             return FileManager.default.fileExists(atPath: modelPath.path)
         }
-        return bobrwhisper_model_exists(app, size.cValue)
+        return model.id.withCString { modelIDPtr in
+            bobrwhisper_model_exists_id(app, modelIDPtr)
+        }
     }
     
-    func getModelPath(_ size: ModelSize) -> String? {
+    func getModelPath(_ model: SpeechModelDescriptor) -> String? {
         guard let app = app else { return nil }
-        let pathStr = bobrwhisper_model_path(app, size.cValue)
+        let pathStr = model.id.withCString { modelIDPtr in
+            bobrwhisper_model_path_id(app, modelIDPtr)
+        }
         guard let ptr = pathStr.ptr else { return nil }
         let path = String(cString: ptr)
         bobrwhisper_string_free(pathStr)
@@ -237,20 +290,28 @@ class AppState: ObservableObject {
     
     func loadModel() {
         guard let app = app else { return }
-        let model = selectedModel
+        guard let model = resolveModel(id: selectedModelID) else { return }
         status = .transcribing  // Show loading state
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let success = bobrwhisper_model_load(app, model.cValue)
+            let success = model.id.withCString { modelIDPtr in
+                bobrwhisper_model_load_id(app, modelIDPtr)
+            }
             
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if success {
                     self.isModelLoaded = true
                     KeyboardSharedState.writeIsModelLoaded(true)
-                    KeyboardSharedState.writeSelectedModelFilename(model.filename)
+                    KeyboardSharedState.writeSelectedModelID(model.id)
+                    UserDefaults.standard.set(model.id, forKey: "defaultModel")
                 } else {
+                    self.errorMessage = "Failed to load model"
+                    self.isModelLoaded = false
+                    self.status = .error
                     KeyboardSharedState.writeIsModelLoaded(false)
+                    KeyboardSharedState.writeSelectedModelID(nil)
+                    return
                 }
                 self.status = .idle
             }
@@ -262,16 +323,17 @@ class AppState: ObservableObject {
         bobrwhisper_model_unload(app)
         isModelLoaded = false
         KeyboardSharedState.writeIsModelLoaded(false)
+        KeyboardSharedState.writeSelectedModelID(nil)
     }
     
-    func downloadModel(_ size: ModelSize) {
+    func downloadModel(_ model: SpeechModelDescriptor) {
         guard !isDownloading else { return }
+        guard let url = model.downloadURL else { return }
         
         isDownloading = true
         downloadProgress = 0
         
-        let url = URL(string: size.downloadURL)!
-        let destinationURL = modelsDirectory.appendingPathComponent(size.filename)
+        let destinationURL = modelsDirectory.appendingPathComponent(model.localFilename)
         
         try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         
@@ -299,6 +361,8 @@ class AppState: ObservableObject {
                     }
                     try FileManager.default.moveItem(at: tempURL, to: destinationURL)
                     self?.downloadProgress = 1.0
+                    self?.selectedModelID = model.id
+                    self?.loadModel()
                 } catch {
                     self?.errorMessage = "Failed to save model: \(error.localizedDescription)"
                     self?.status = .error
@@ -393,7 +457,90 @@ private struct TranscriptLogStoreEntry: Decodable {
     }
 }
 
-private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
+private let defaultSpeechModelID = "whisper-small"
+
+func resolveLegacyStoredModelID(_ storedValue: String) -> String {
+    switch storedValue {
+    case "tiny": return "whisper-tiny"
+    case "base": return "whisper-base"
+    case "small": return "whisper-small"
+    case "medium": return "whisper-medium"
+    case "large": return "whisper-large-v3"
+    case "large_turbo": return "whisper-large-v3-turbo"
+    default: return storedValue
+    }
+}
+
+struct SpeechModelDescriptor: Identifiable, Equatable {
+    let id: String
+    let displayName: String
+    let family: String
+    let runtime: ModelRuntime
+    let localFilename: String
+    let downloadURL: URL?
+    let sizeBytes: UInt64
+    let capabilities: UInt64
+    let availableOnThisDevice: Bool
+
+    init?(rawDescriptor: bobrwhisper_model_descriptor_s) {
+        guard let idPtr = rawDescriptor.id,
+              let displayNamePtr = rawDescriptor.display_name,
+              let familyPtr = rawDescriptor.family,
+              let localFilenamePtr = rawDescriptor.local_filename else {
+            return nil
+        }
+
+        id = String(cString: idPtr)
+        displayName = String(cString: displayNamePtr)
+        family = String(cString: familyPtr)
+        runtime = ModelRuntime(cValue: rawDescriptor.runtime)
+        localFilename = String(cString: localFilenamePtr)
+        if let downloadURLPtr = rawDescriptor.download_url {
+            downloadURL = URL(string: String(cString: downloadURLPtr))
+        } else {
+            downloadURL = nil
+        }
+        sizeBytes = rawDescriptor.size_bytes
+        capabilities = rawDescriptor.capabilities
+        availableOnThisDevice = rawDescriptor.available_on_this_device
+    }
+
+    var detailsText: String {
+        "\(family.capitalized) • \(formattedSize)"
+    }
+
+    private var formattedSize: String {
+        let gigabyte = 1024.0 * 1024.0 * 1024.0
+        let megabyte = 1024.0 * 1024.0
+        let size = Double(sizeBytes)
+        if size >= gigabyte {
+            return String(format: "%.1f GB", size / gigabyte)
+        }
+        return String(format: "%.0f MB", size / megabyte)
+    }
+}
+
+enum ModelRuntime: String {
+    case whisperCpp = "whisper.cpp"
+    case coreml = "Core ML"
+    case onnx = "ONNX"
+    case server = "Server"
+
+    init(cValue: bobrwhisper_model_runtime_e) {
+        switch cValue {
+        case BOBRWHISPER_MODEL_RUNTIME_COREML:
+            self = .coreml
+        case BOBRWHISPER_MODEL_RUNTIME_ONNX:
+            self = .onnx
+        case BOBRWHISPER_MODEL_RUNTIME_SERVER:
+            self = .server
+        default:
+            self = .whisperCpp
+        }
+    }
+}
+
+private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionDataDelegate {
     weak var appState: AppState?
     private var expectedBytes: Int64 = 0
     
@@ -434,55 +581,6 @@ enum Status: Int {
     
     init(cValue: bobrwhisper_status_e) {
         self = Status(rawValue: Int(cValue.rawValue)) ?? .idle
-    }
-}
-
-enum ModelSize: String, CaseIterable, Identifiable {
-    case tiny = "Tiny (~75 MB)"
-    case base = "Base (~142 MB)"
-    case small = "Small (~466 MB)"
-    case medium = "Medium (~1.5 GB)"
-    case large = "Large (~3.1 GB)"
-    case largeTurbo = "Large Turbo (~809 MB)"
-    
-    var id: String { rawValue }
-    
-    var cValue: bobrwhisper_model_size_e {
-        switch self {
-        case .tiny: return BOBRWHISPER_MODEL_TINY
-        case .base: return BOBRWHISPER_MODEL_BASE
-        case .small: return BOBRWHISPER_MODEL_SMALL
-        case .medium: return BOBRWHISPER_MODEL_MEDIUM
-        case .large: return BOBRWHISPER_MODEL_LARGE
-        case .largeTurbo: return BOBRWHISPER_MODEL_LARGE_TURBO
-        }
-    }
-    
-    var filename: String {
-        switch self {
-        case .tiny: return "ggml-tiny.bin"
-        case .base: return "ggml-base.bin"
-        case .small: return "ggml-small.bin"
-        case .medium: return "ggml-medium.bin"
-        case .large: return "ggml-large-v3.bin"
-        case .largeTurbo: return "ggml-large-v3-turbo.bin"
-        }
-    }
-    
-    var downloadURL: String {
-        let base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
-        return "\(base)/\(filename)"
-    }
-    
-    var sizeDescription: String {
-        switch self {
-        case .tiny: return "~75 MB • Fastest, least accurate"
-        case .base: return "~142 MB • Fast, basic accuracy"
-        case .small: return "~466 MB • Balanced speed/accuracy"
-        case .medium: return "~1.5 GB • Slow, high accuracy"
-        case .large: return "~3.1 GB • Slowest, best accuracy"
-        case .largeTurbo: return "~809 MB • Near-large accuracy, ~4x faster"
-        }
     }
 }
 
