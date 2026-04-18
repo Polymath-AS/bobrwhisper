@@ -19,6 +19,27 @@ typedef struct {
 } bobrwhisper_string_s;
 
 typedef enum {
+    BOBRWHISPER_MODEL_RUNTIME_WHISPER_CPP = 0,
+    BOBRWHISPER_MODEL_RUNTIME_COREML = 1,
+    BOBRWHISPER_MODEL_RUNTIME_ONNX = 2,
+    BOBRWHISPER_MODEL_RUNTIME_SERVER = 3,
+} bobrwhisper_model_runtime_e;
+
+typedef uint64_t bobrwhisper_model_capabilities_t;
+
+typedef struct {
+    const char* id;
+    const char* display_name;
+    const char* family;
+    bobrwhisper_model_runtime_e runtime;
+    const char* local_filename;
+    const char* download_url;
+    uint64_t size_bytes;
+    bobrwhisper_model_capabilities_t capabilities;
+    bool available_on_this_device;
+} bobrwhisper_model_descriptor_s;
+
+typedef enum {
     BOBRWHISPER_MODEL_TINY = 0,
     BOBRWHISPER_MODEL_BASE = 1,
     BOBRWHISPER_MODEL_SMALL = 2,
@@ -79,6 +100,17 @@ void bobrwhisper_deinit(void);
 
 bobrwhisper_app_t bobrwhisper_app_new(const bobrwhisper_runtime_config_s* config);
 void bobrwhisper_app_free(bobrwhisper_app_t app);
+
+size_t bobrwhisper_model_count(bobrwhisper_app_t app);
+bool bobrwhisper_model_descriptor_at(
+    bobrwhisper_app_t app,
+    size_t index,
+    bobrwhisper_model_descriptor_s* out_descriptor
+);
+
+bool bobrwhisper_model_exists_id(bobrwhisper_app_t app, const char* model_id);
+bobrwhisper_string_s bobrwhisper_model_path_id(bobrwhisper_app_t app, const char* model_id);
+bool bobrwhisper_model_load_id(bobrwhisper_app_t app, const char* model_id);
 
 bool bobrwhisper_model_exists(bobrwhisper_app_t app, bobrwhisper_model_size_e size);
 bobrwhisper_string_s bobrwhisper_model_path(bobrwhisper_app_t app, bobrwhisper_model_size_e size);

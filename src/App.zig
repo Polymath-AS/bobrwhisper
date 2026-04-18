@@ -2,14 +2,16 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const asr = @import("asr");
 const c_api = @import("c_api.zig");
-const Transcriber = @import("Transcriber.zig");
 const AudioCapture = @import("audio/AudioCapture.zig");
 const SettingsStore = @import("SettingsStore.zig");
 const LogStore = @import("LogStore.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
+const RuntimeAdapter = asr.RuntimeAdapter;
+const RuntimeLoadConfig = asr.RuntimeLoadConfig;
 
 const App = @This();
 
@@ -27,8 +29,8 @@ allocator: std.mem.Allocator,
 config: c_api.RuntimeConfig,
 status: c_api.Status,
 
-transcriber: ?Transcriber,
-live_transcriber: ?Transcriber,
+transcriber: ?RuntimeAdapter,
+live_transcriber: ?RuntimeAdapter,
 audio: ?AudioCapture,
 llama: if (has_llm) ?LlamaClient else void,
 log_store: LogStore,
@@ -66,6 +68,22 @@ pub fn deinit(self: *App) void {
     }
     if (self.custom_prompt) |cp| self.allocator.free(cp);
     self.log_store.deinit();
+}
+
+fn resolveModelDescriptorByID(model_id: []const u8) !asr.ModelDescriptor {
+    return asr.ModelRegistry.findByID(model_id) orelse error.UnknownModel;
+}
+
+fn getModelPathForDescriptor(
+    self: *App,
+    descriptor: asr.ModelDescriptor,
+    path_buf: *[std.fs.max_path_bytes]u8,
+) ![:0]const u8 {
+    const models_dir = self.config.getModelsDir();
+    return std.fmt.bufPrintZ(path_buf, "{s}/{s}", .{ models_dir, descriptor.local_filename }) catch {
+        self.notifyError("Model path too long");
+        return error.PathTooLong;
+    };
 }
 
 fn pathExists(path: []const u8) bool {
@@ -131,15 +149,11 @@ fn ensureLlamaLoaded(self: *App) !void {
     std.log.info("LLM model loaded: {s}", .{llm_model_path});
 }
 
-pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
-    const models_dir = self.config.getModelsDir();
-    const model_name = size.toModelName();
+pub fn loadModelByID(self: *App, model_id: []const u8) !void {
+    const descriptor = try resolveModelDescriptorByID(model_id);
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const model_path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ models_dir, model_name }) catch {
-        self.notifyError("Model path too long");
-        return error.PathTooLong;
-    };
+    const model_path = try self.getModelPathForDescriptor(descriptor, &path_buf);
 
     std.fs.accessAbsolute(model_path, .{}) catch {
         std.log.err("Model not found: {s}", .{model_path});
@@ -150,41 +164,38 @@ pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
     std.log.info("Loading model: {s}", .{model_path});
     self.setStatus(.transcribing);
 
+    self.unloadModel();
+
     const vad_path = self.config.getVadModelPath();
     const cpu_count = std.Thread.getCpuCount() catch 4;
-    // Use half of available cores (P-cores on Apple Silicon), minimum 4
     const n_threads: u32 = @intCast(@max(4, cpu_count / 2));
-    self.transcriber = Transcriber.init(self.allocator, .{
+    const load_config = RuntimeLoadConfig{
         .model_path = model_path,
         .language = "en",
         .n_threads = n_threads,
         .vad_enabled = vad_path != null,
         .vad_model_path = vad_path,
-    }) catch |err| {
+    };
+
+    self.transcriber = RuntimeAdapter.init(self.allocator, descriptor, load_config) catch |err| {
         std.log.err("Failed to load model: {}", .{err});
         self.notifyError("Failed to load model");
         self.setStatus(.@"error");
         return err;
     };
 
-    // Try loading base model for faster live transcription
-    if (self.live_transcriber) |*lt| {
-        lt.deinit();
-        self.live_transcriber = null;
-    }
-    if (size != .tiny and size != .base) {
-        const base_name = c_api.ModelSize.base.toModelName();
-        var base_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        if (std.fmt.bufPrintZ(&base_path_buf, "{s}/{s}", .{ models_dir, base_name })) |base_path| {
-            if (std.fs.accessAbsolute(base_path, .{})) |_| {
-                self.live_transcriber = Transcriber.init(self.allocator, .{
-                    .model_path = base_path,
+    if (asr.ModelRegistry.preferredLiveModel(descriptor)) |live_descriptor| {
+        var live_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        if (self.getModelPathForDescriptor(live_descriptor, &live_path_buf)) |live_model_path| {
+            if (std.fs.accessAbsolute(live_model_path, .{})) |_| {
+                self.live_transcriber = RuntimeAdapter.init(self.allocator, live_descriptor, .{
+                    .model_path = live_model_path,
                     .language = "en",
                     .n_threads = n_threads,
                     .vad_enabled = vad_path != null,
                     .vad_model_path = vad_path,
                 }) catch |err| blk: {
-                    std.log.info("Base model not available for live transcription, using main model: {}", .{err});
+                    std.log.info("Live model not available for faster transcription, using main model: {}", .{err});
                     break :blk null;
                 };
             } else |_| {}
@@ -193,6 +204,10 @@ pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
 
     std.log.info("Model loaded successfully", .{});
     self.setStatus(.idle);
+}
+
+pub fn loadModel(self: *App, size: c_api.ModelSize) !void {
+    return self.loadModelByID(size.toModelID());
 }
 
 pub fn unloadModel(self: *App) void {
@@ -210,14 +225,11 @@ pub fn isModelLoaded(self: *App) bool {
     return self.transcriber != null;
 }
 
-pub fn modelExists(self: *App, size: c_api.ModelSize) bool {
-    const models_dir = self.config.getModelsDir();
-    const model_name = size.toModelName();
+pub fn modelExistsByID(self: *App, model_id: []const u8) bool {
+    const descriptor = resolveModelDescriptorByID(model_id) catch return false;
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const model_path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ models_dir, model_name }) catch {
-        return false;
-    };
+    const model_path = self.getModelPathForDescriptor(descriptor, &path_buf) catch return false;
 
     std.fs.accessAbsolute(model_path, .{}) catch {
         return false;
@@ -225,17 +237,22 @@ pub fn modelExists(self: *App, size: c_api.ModelSize) bool {
     return true;
 }
 
-pub fn getModelPath(self: *App, size: c_api.ModelSize) !c_api.String {
-    const models_dir = self.config.getModelsDir();
-    const model_name = size.toModelName();
+pub fn modelExists(self: *App, size: c_api.ModelSize) bool {
+    return self.modelExistsByID(size.toModelID());
+}
+
+pub fn getModelPathByID(self: *App, model_id: []const u8) !c_api.String {
+    const descriptor = try resolveModelDescriptorByID(model_id);
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const model_path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ models_dir, model_name }) catch {
-        return error.PathTooLong;
-    };
+    const model_path = try self.getModelPathForDescriptor(descriptor, &path_buf);
 
     const duped = try self.allocator.dupeZ(u8, model_path);
     return c_api.String.fromSlice(duped);
+}
+
+pub fn getModelPath(self: *App, size: c_api.ModelSize) !c_api.String {
+    return self.getModelPathByID(size.toModelID());
 }
 
 pub fn startRecording(self: *App) !void {
@@ -295,7 +312,7 @@ fn liveTranscriptionLoop(self: *App, language: [:0]const u8) void {
         defer self.allocator.free(result.samples);
         const tail_samples = result.samples;
 
-        var transcriber = self.transcriber orelse continue;
+        var transcriber = if (self.transcriber) |*loaded_transcriber| loaded_transcriber else continue;
 
         // Finalize completed chunks: transcribe each once, freeze text
         var local_offset: usize = 0;
@@ -326,7 +343,7 @@ fn liveTranscriptionLoop(self: *App, language: [:0]const u8) void {
             continue;
         }
 
-        var live_t = self.live_transcriber orelse self.transcriber orelse continue;
+        var live_t = if (self.live_transcriber) |*live_transcriber| live_transcriber else if (self.transcriber) |*loaded_transcriber| loaded_transcriber else continue;
         const tail_text = live_t.transcribeLive(tail, language) catch |err| {
             std.log.warn("Live transcription failed: {}", .{err});
             continue;
@@ -375,7 +392,7 @@ pub fn stopRecordingAndTranscribe(self: *App, options: c_api.TranscribeOptions) 
 
 /// Transcribe only the unfrozen tail and combine with frozen transcript for the final result.
 fn transcribeTail(self: *App, options: c_api.TranscribeOptions) !void {
-    var transcriber = self.transcriber orelse {
+    var transcriber = if (self.transcriber) |*loaded_transcriber| loaded_transcriber else {
         self.notifyError("No model loaded");
         return error.ModelNotLoaded;
     };
@@ -419,7 +436,7 @@ pub fn isRecording(self: *App) bool {
 }
 
 pub fn transcribe(self: *App, options: c_api.TranscribeOptions) !void {
-    var transcriber = self.transcriber orelse {
+    var transcriber = if (self.transcriber) |*loaded_transcriber| loaded_transcriber else {
         self.notifyError("No model loaded");
         return error.ModelNotLoaded;
     };

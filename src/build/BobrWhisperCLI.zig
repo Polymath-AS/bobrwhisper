@@ -12,14 +12,23 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperCLI {
     // trigger Zig's runtime safety checks (null pointer offset) in Debug mode
     const cli_optimize: std.builtin.OptimizeMode = if (deps.optimize == .Debug) .ReleaseFast else deps.optimize;
     const cli_deps = try deps.retargetWithOptimize(b, deps.target, cli_optimize);
+    const asr_module = b.createModule(.{
+        .root_source_file = b.path("pkg/asr/main.zig"),
+        .target = deps.target,
+        .optimize = cli_optimize,
+    });
+    asr_module.addIncludePath(cli_deps.whisper.include_path);
+    asr_module.addIncludePath(cli_deps.llama.ggml_include_path);
+    const root_module = b.createModule(.{
+        .root_source_file = b.path("src/cli.zig"),
+        .target = deps.target,
+        .optimize = cli_optimize,
+    });
+    root_module.addImport("asr", asr_module);
 
     const exe = b.addExecutable(.{
         .name = "bobrwhisper-cli",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/cli.zig"),
-            .target = deps.target,
-            .optimize = cli_optimize,
-        }),
+        .root_module = root_module,
     });
 
     try cli_deps.link(b, exe);

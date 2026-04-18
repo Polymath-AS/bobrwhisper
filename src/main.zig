@@ -3,9 +3,9 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const asr = @import("asr");
 const c = @import("c_api.zig");
 const App = @import("App.zig");
-const Transcriber = @import("Transcriber.zig");
 
 pub const version = "0.1.0";
 
@@ -109,6 +109,42 @@ pub export fn bobrwhisper_get_status(app: ?*App) c.Status {
 pub export fn bobrwhisper_get_audio_level(app: ?*App) f32 {
     const a = app orelse return 0;
     return a.getAudioLevel();
+}
+
+pub export fn bobrwhisper_model_count(app: ?*App) usize {
+    _ = app;
+    return asr.ModelRegistry.count();
+}
+
+pub export fn bobrwhisper_model_descriptor_at(
+    app: ?*App,
+    index: usize,
+    out_descriptor: ?*c.ModelDescriptor,
+) bool {
+    _ = app;
+    const descriptor_out = out_descriptor orelse return false;
+    const descriptor = asr.ModelRegistry.descriptorAt(index) orelse return false;
+    descriptor_out.* = c.ModelDescriptor.fromAsrDescriptor(descriptor);
+    return true;
+}
+
+pub export fn bobrwhisper_model_exists_id(app: ?*App, model_id: ?[*:0]const u8) bool {
+    const a = app orelse return false;
+    const id = model_id orelse return false;
+    return a.modelExistsByID(std.mem.span(id));
+}
+
+pub export fn bobrwhisper_model_path_id(app: ?*App, model_id: ?[*:0]const u8) c.String {
+    const a = app orelse return c.String.fromSlice("");
+    const id = model_id orelse return c.String.fromSlice("");
+    return a.getModelPathByID(std.mem.span(id)) catch return c.String.fromSlice("");
+}
+
+pub export fn bobrwhisper_model_load_id(app: ?*App, model_id: ?[*:0]const u8) bool {
+    const a = app orelse return false;
+    const id = model_id orelse return false;
+    a.loadModelByID(std.mem.span(id)) catch return false;
+    return true;
 }
 
 pub export fn bobrwhisper_model_exists(app: ?*App, size: c.ModelSize) bool {

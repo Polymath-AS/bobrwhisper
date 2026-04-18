@@ -1,6 +1,7 @@
 //! C ABI types matching include/bobrwhisper.h
 
 const std = @import("std");
+const asr = @import("asr");
 
 pub const String = extern struct {
     ptr: ?[*]const u8,
@@ -33,6 +34,50 @@ pub const String = extern struct {
     }
 };
 
+pub const ModelRuntime = enum(c_int) {
+    whisper_cpp = 0,
+    coreml = 1,
+    onnx = 2,
+    server = 3,
+
+    pub fn fromAsrRuntime(runtime: asr.ModelRuntime) ModelRuntime {
+        return switch (runtime) {
+            .whisper_cpp => .whisper_cpp,
+            .coreml => .coreml,
+            .onnx => .onnx,
+            .server => .server,
+        };
+    }
+};
+
+pub const ModelCapabilities = u64;
+
+pub const ModelDescriptor = extern struct {
+    id: ?[*:0]const u8,
+    display_name: ?[*:0]const u8,
+    family: ?[*:0]const u8,
+    runtime: ModelRuntime,
+    local_filename: ?[*:0]const u8,
+    download_url: ?[*:0]const u8,
+    size_bytes: u64,
+    capabilities: ModelCapabilities,
+    available_on_this_device: bool,
+
+    pub fn fromAsrDescriptor(descriptor: asr.ModelDescriptor) ModelDescriptor {
+        return .{
+            .id = descriptor.id.ptr,
+            .display_name = descriptor.display_name.ptr,
+            .family = descriptor.family.ptr,
+            .runtime = ModelRuntime.fromAsrRuntime(descriptor.runtime),
+            .local_filename = descriptor.local_filename.ptr,
+            .download_url = if (descriptor.download_url) |download_url| download_url.ptr else null,
+            .size_bytes = descriptor.size_bytes,
+            .capabilities = descriptor.capabilities,
+            .available_on_this_device = descriptor.available_on_this_device,
+        };
+    }
+};
+
 pub const ModelSize = enum(c_int) {
     tiny = 0,
     base = 1,
@@ -61,6 +106,11 @@ pub const ModelSize = enum(c_int) {
             .large => 3100,
             .large_turbo => 809,
         };
+    }
+
+    pub fn toModelID(self: ModelSize) []const u8 {
+        const descriptor = asr.ModelRegistry.findByLegacyStorageKey(@tagName(self)) orelse unreachable;
+        return descriptor.id;
     }
 };
 

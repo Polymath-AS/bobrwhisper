@@ -9,13 +9,23 @@ output: std.Build.LazyPath,
 lib: ?*std.Build.Step.Compile = null,
 
 pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
+    const asr_module = b.createModule(.{
+        .root_source_file = b.path("pkg/asr/main.zig"),
+        .target = deps.target,
+        .optimize = deps.optimize,
+    });
+    asr_module.addIncludePath(deps.whisper.include_path);
+    asr_module.addIncludePath(deps.llama.ggml_include_path);
+    const root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = deps.target,
+        .optimize = deps.optimize,
+    });
+    root_module.addImport("asr", asr_module);
+
     const lib = b.addLibrary(.{
         .name = "bobrwhisper",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = deps.target,
-            .optimize = deps.optimize,
-        }),
+        .root_module = root_module,
         .linkage = .static,
     });
 
@@ -29,13 +39,23 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
 }
 
 pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
+    const asr_module = b.createModule(.{
+        .root_source_file = b.path("pkg/asr/main.zig"),
+        .target = deps.target,
+        .optimize = deps.optimize,
+    });
+    asr_module.addIncludePath(deps.whisper.include_path);
+    asr_module.addIncludePath(deps.llama.ggml_include_path);
+    const root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = deps.target,
+        .optimize = deps.optimize,
+    });
+    root_module.addImport("asr", asr_module);
+
     const lib = b.addLibrary(.{
         .name = "bobrwhisper",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = deps.target,
-            .optimize = deps.optimize,
-        }),
+        .root_module = root_module,
         .linkage = .static,
     });
 

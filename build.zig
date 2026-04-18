@@ -4,6 +4,13 @@ const buildpkg = @import("src/build/main.zig");
 pub fn build(b: *std.Build) !void {
     const config = buildpkg.Config.init(b);
     const deps = try buildpkg.SharedDeps.init(b, &config);
+    const asr_module = b.createModule(.{
+        .root_source_file = b.path("pkg/asr/main.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
+    });
+    asr_module.addIncludePath(deps.whisper.include_path);
+    asr_module.addIncludePath(deps.llama.ggml_include_path);
 
     // Steps
     const run_cli_step = b.step("run-cli", "Run CLI");
@@ -41,12 +48,14 @@ pub fn build(b: *std.Build) !void {
     ios_step.dependOn(ios_app.step);
 
     // Tests
+    const test_root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
+    });
+    test_root_module.addImport("asr", asr_module);
     const lib_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = config.target,
-            .optimize = config.optimize,
-        }),
+        .root_module = test_root_module,
     });
     try deps.link(b, lib_tests);
     test_step.dependOn(&b.addRunArtifact(lib_tests).step);

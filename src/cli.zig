@@ -2,11 +2,12 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const Transcriber = @import("Transcriber.zig");
+const asr = @import("asr");
 const AudioCapture = @import("audio/AudioCapture.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
+const WhisperCppAdapter = asr.WhisperCppAdapter;
 
 pub const WhisperModel = enum {
     tiny,
@@ -289,7 +290,7 @@ fn transcribeCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     std.debug.print("Loading model: {s}\n", .{model_path});
     if (vad_path != null) std.debug.print("VAD: enabled\n", .{});
 
-    var transcriber = try Transcriber.init(allocator, .{
+    var transcriber = try WhisperCppAdapter.init(allocator, .{
         .model_path = model_path,
         .language = "en",
         .n_threads = 4,
@@ -327,7 +328,7 @@ fn transcribeRawCommand(allocator: std.mem.Allocator, args: []const []const u8) 
     std.debug.print("Loading model: {s}\n", .{model_path});
     if (vad_path != null) std.debug.print("VAD: enabled\n", .{});
 
-    var transcriber = try Transcriber.init(allocator, .{
+    var transcriber = try WhisperCppAdapter.init(allocator, .{
         .model_path = model_path,
         .language = "en",
         .n_threads = 4,
@@ -439,7 +440,7 @@ fn liveCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
     std.debug.print("Loading whisper model: {s}\n", .{model_path});
     if (vad_path != null) std.debug.print("VAD: enabled\n", .{});
 
-    var transcriber = Transcriber.init(allocator, .{
+    var transcriber = WhisperCppAdapter.init(allocator, .{
         .model_path = model_path,
         .language = "en",
         .n_threads = 4,
@@ -595,9 +596,9 @@ fn modelsCommand(allocator: std.mem.Allocator) !void {
 }
 
 fn languagesCommand() void {
-    std.debug.print("Supported languages ({d}):\n\n", .{Transcriber.getSupportedLanguages().len});
+    std.debug.print("Supported languages ({d}):\n\n", .{WhisperCppAdapter.getSupportedLanguages().len});
 
-    for (Transcriber.getSupportedLanguages(), 0..) |lang, i| {
+    for (WhisperCppAdapter.getSupportedLanguages(), 0..) |lang, i| {
         std.debug.print("{s:>4}", .{lang});
         if ((i + 1) % 10 == 0) {
             std.debug.print("\n", .{});

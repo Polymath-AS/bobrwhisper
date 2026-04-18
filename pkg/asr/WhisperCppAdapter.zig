@@ -1,8 +1,8 @@
-//! Whisper.cpp integration for speech-to-text
+//! whisper.cpp backend for the ASR runtime package
 
 const std = @import("std");
 
-const Transcriber = @This();
+const WhisperCppAdapter = @This();
 const builtin = @import("builtin");
 
 const c = @cImport({
@@ -48,7 +48,7 @@ fn shouldUseGpu() bool {
 
 fn nullLogCallback(_: c.ggml_log_level, _: [*c]const u8, _: ?*anyopaque) callconv(.c) void {}
 
-pub fn init(allocator: std.mem.Allocator, config: Config) !Transcriber {
+pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
     std.debug.assert(config.model_path.len > 0);
     std.debug.assert(config.language.len > 0);
 
@@ -87,7 +87,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !Transcriber {
     };
 }
 
-pub fn deinit(self: *Transcriber) void {
+pub fn deinit(self: *WhisperCppAdapter) void {
     if (self.ctx) |ctx| {
         c.whisper_free(ctx);
     }
@@ -99,21 +99,21 @@ pub fn deinit(self: *Transcriber) void {
 }
 
 /// Transcribe audio samples (16kHz, mono, f32)
-pub fn transcribe(self: *Transcriber, samples: []const f32) ![]u8 {
+pub fn transcribe(self: *WhisperCppAdapter, samples: []const f32) ![]u8 {
     return self.transcribeWithLanguage(samples, self.language);
 }
 
 /// Transcribe with language override
-pub fn transcribeWithLanguage(self: *Transcriber, samples: []const f32, language: []const u8) ![]u8 {
+pub fn transcribeWithLanguage(self: *WhisperCppAdapter, samples: []const f32, language: []const u8) ![]u8 {
     return self.transcribeInternal(samples, language, false);
 }
 
 /// Transcribe optimized for live/streaming: single segment, no cross-segment context.
-pub fn transcribeLive(self: *Transcriber, samples: []const f32, language: []const u8) ![]u8 {
+pub fn transcribeLive(self: *WhisperCppAdapter, samples: []const f32, language: []const u8) ![]u8 {
     return self.transcribeInternal(samples, language, true);
 }
 
-fn transcribeInternal(self: *Transcriber, samples: []const f32, language: []const u8, live: bool) ![]u8 {
+fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: []const u8, live: bool) ![]u8 {
     const ctx = self.ctx orelse return error.NoContext;
 
     if (samples.len == 0) {
@@ -176,7 +176,7 @@ fn transcribeInternal(self: *Transcriber, samples: []const f32, language: []cons
 }
 
 /// Get detected language after transcription
-pub fn getDetectedLanguage(self: *Transcriber) []const u8 {
+pub fn getDetectedLanguage(self: *WhisperCppAdapter) []const u8 {
     return self.language;
 }
 
@@ -211,7 +211,7 @@ pub const ModelInfo = struct {
     size_mb: u32,
 };
 
-pub fn getModelInfo(self: *Transcriber) ModelInfo {
+pub fn getModelInfo(self: *WhisperCppAdapter) ModelInfo {
     _ = self;
     return .{ .name = "whisper", .size_mb = 0 };
 }

@@ -18,6 +18,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "pkg",
         "src",
         "include",
     },
