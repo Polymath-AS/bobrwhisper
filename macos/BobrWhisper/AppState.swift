@@ -182,6 +182,7 @@ class AppState: ObservableObject {
     
     func startRecording() {
         guard let app = app else { return }
+        guard !isRecording, status != .transcribing, status != .formatting else { return }
         
         // Use live transcription for streaming results
         "en".withCString { langPtr in
@@ -195,23 +196,32 @@ class AppState: ObservableObject {
     }
     
     func stopRecording() {
-        guard let app = app else { return }
+        guard let app = app, isRecording else { return }
         
         stopAudioLevelPolling()
+        isRecording = false
+        status = .transcribing
         let currentTone = tone
         
-        // Stop with final transcription
-        "en".withCString { langPtr in
-            var options = bobrwhisper_transcribe_options_s()
-            options.language = langPtr
-            options.tone = currentTone.cValue
-            options.remove_filler_words = true
-            options.auto_punctuate = true
-            options.use_llm_formatting = false
-            
-            _ = bobrwhisper_stop_recording_live(app, &options)
+        // Stop/transcribe off the main thread so the recording UI can update immediately.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            "en".withCString { langPtr in
+                var options = bobrwhisper_transcribe_options_s()
+                options.language = langPtr
+                options.tone = currentTone.cValue
+                options.remove_filler_words = true
+                options.auto_punctuate = true
+                options.use_llm_formatting = false
+
+                let success = bobrwhisper_stop_recording_live(app, &options)
+                guard !success else { return }
+
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to transcribe recording"
+                    self?.status = .error
+                }
+            }
         }
-        isRecording = false
     }
     
     private func startAudioLevelPolling() {
