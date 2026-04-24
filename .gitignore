@@ -43,3 +43,4 @@ resources/
 
 # Audio recordings
 *.raw
+/zig-pkg
