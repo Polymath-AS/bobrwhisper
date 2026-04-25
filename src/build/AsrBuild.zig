@@ -25,13 +25,13 @@ pub fn addWhisperBridge(
     deps: *const SharedDeps,
     optimize: std.builtin.OptimizeMode,
 ) void {
-    compile.addCSourceFiles(.{
+    compile.root_module.addCSourceFiles(.{
         .root = b.path("pkg/asr"),
         .files = &.{"whisper_bridge.c"},
         .flags = bridgeFlags(optimize),
     });
-    compile.addIncludePath(deps.whisper.include_path);
-    compile.addIncludePath(deps.llama.ggml_include_path);
+    compile.root_module.addIncludePath(deps.whisper.include_path);
+    compile.root_module.addIncludePath(deps.llama.ggml_include_path);
 }
 
 fn bridgeFlags(optimize: std.builtin.OptimizeMode) []const []const u8 {

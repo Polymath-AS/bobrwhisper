@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat.zig");
 
 const sqlite = @cImport({
     @cInclude("sqlite3.h");
@@ -68,7 +69,7 @@ pub fn appendTranscript(self: *LogStore, allocator: std.mem.Allocator, transcrip
     defer _ = sqlite.sqlite3_finalize(stmt);
     std.debug.assert(stmt != null);
 
-    const bind_time = sqlite.sqlite3_bind_int64(stmt, 1, std.time.milliTimestamp());
+    const bind_time = sqlite.sqlite3_bind_int64(stmt, 1, compat.milliTimestamp());
     if (bind_time != sqlite.SQLITE_OK) {
         return error.SqliteBindFailed;
     }
@@ -126,7 +127,7 @@ pub fn readRecent(self: *LogStore, allocator: std.mem.Allocator, limit: usize) !
         return error.SqliteBindFailed;
     }
 
-    var rows: std.ArrayListUnmanaged(Entry) = .{};
+    var rows: std.ArrayListUnmanaged(Entry) = .empty;
     errdefer {
         for (rows.items) |entry| {
             allocator.free(entry.text);

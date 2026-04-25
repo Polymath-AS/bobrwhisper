@@ -7,9 +7,9 @@ pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
     const target = step.rootModuleTarget();
     if (!target.os.tag.isDarwin()) return;
 
-    const libc = std.zig.LibCInstallation.findNative(.{
-        .allocator = b.graph.arena,
+    const libc = std.zig.LibCInstallation.findNative(b.graph.arena, b.graph.io, .{
         .target = &target,
+        .environ_map = &b.graph.environ_map,
         .verbose = false,
     }) catch |err| switch (err) {
         error.DarwinSdkNotFound => return,

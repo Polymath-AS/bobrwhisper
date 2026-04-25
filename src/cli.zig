@@ -1,6 +1,7 @@
 //! CLI for testing BobrWhisper
 
 const std = @import("std");
+const compat = @import("compat.zig");
 const builtin = @import("builtin");
 const asr = @import("asr");
 const AudioCapture = @import("audio/AudioCapture.zig");
@@ -56,7 +57,7 @@ pub const WhisperModel = enum {
     }
 
     pub fn getPath(self: WhisperModel, allocator: std.mem.Allocator) ![]const u8 {
-        const home = std.posix.getenv("HOME") orelse "/tmp";
+        const home = compat.getenv("HOME") orelse "/tmp";
         return std.fmt.allocPrint(allocator, "{s}/.bobrwhisper/models/{s}", .{ home, self.filename() });
     }
 
@@ -64,7 +65,7 @@ pub const WhisperModel = enum {
         const path = try self.getPath(allocator);
         errdefer allocator.free(path);
 
-        std.fs.accessAbsolute(path, .{}) catch {
+        compat.accessAbsolute(path) catch {
             std.debug.print("Model '{s}' not found. Downloading ({s})...\n", .{ @tagName(self), self.sizeDesc() });
             try downloadWhisperModel(self, path);
         };
@@ -74,10 +75,10 @@ pub const WhisperModel = enum {
 };
 
 pub fn getVadModelPath(allocator: std.mem.Allocator) ?[]const u8 {
-    const home = std.posix.getenv("HOME") orelse return null;
+    const home = compat.getenv("HOME") orelse return null;
     const path = std.fmt.allocPrint(allocator, "{s}/.bobrwhisper/models/silero-v6.2.0.bin", .{home}) catch return null;
 
-    std.fs.accessAbsolute(path, .{}) catch {
+    compat.accessAbsolute(path) catch {
         allocator.free(path);
         return null;
     };
@@ -123,7 +124,7 @@ pub const LlamaModel = enum {
     }
 
     pub fn getPath(self: LlamaModel, allocator: std.mem.Allocator) ![]const u8 {
-        const home = std.posix.getenv("HOME") orelse "/tmp";
+        const home = compat.getenv("HOME") orelse "/tmp";
         return std.fmt.allocPrint(allocator, "{s}/.bobrwhisper/models/{s}", .{ home, self.filename() });
     }
 
@@ -131,7 +132,7 @@ pub const LlamaModel = enum {
         const path = try self.getPath(allocator);
         errdefer allocator.free(path);
 
-        std.fs.accessAbsolute(path, .{}) catch {
+        compat.accessAbsolute(path) catch {
             std.debug.print("LLM '{s}' not found. Downloading ({s})...\n", .{ @tagName(self), self.sizeDesc() });
             try downloadLlamaModel(self, path);
         };
@@ -150,11 +151,11 @@ fn downloadLlamaModel(model: LlamaModel, dest_path: []const u8) !void {
 
 fn setupMetalResources(allocator: std.mem.Allocator) void {
     // Skip if already set
-    if (std.posix.getenv("GGML_METAL_PATH_RESOURCES") != null) return;
+    if (compat.getenv("GGML_METAL_PATH_RESOURCES") != null) return;
 
     // Get executable path and derive ../share from it
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const exe_path = std.fs.selfExePath(&buf) catch return;
+    const exe_path = buf[0..(std.process.executablePath(compat.io(), &buf) catch return)];
 
     const exe_dir = std.fs.path.dirname(exe_path) orelse return;
     const share_path_slice = std.fmt.allocPrint(allocator, "{s}/../share\x00", .{exe_dir}) catch return;
@@ -165,7 +166,7 @@ fn setupMetalResources(allocator: std.mem.Allocator) void {
     const metal_path = std.fmt.allocPrint(allocator, "{s}/ggml-metal.metal", .{share_path_slice[0 .. share_path_slice.len - 1]}) catch return;
     defer allocator.free(metal_path);
 
-    std.fs.accessAbsolute(metal_path, .{}) catch return;
+    compat.accessAbsolute(metal_path) catch return;
 
     // Set env var for ggml via extern C
     _ = setenv("GGML_METAL_PATH_RESOURCES", share_path, 0);
@@ -173,38 +174,41 @@ fn setupMetalResources(allocator: std.mem.Allocator) void {
 
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 
+fn readFileAll(file: std.Io.File, buffer: []u8) !void {
+    var io_buffer: [4096]u8 = undefined;
+    var reader = file.readerStreaming(compat.io(), &io_buffer);
+    try reader.interface.readSliceAll(buffer);
+}
+
+
 fn downloadFile(url: []const u8, dest_path: []const u8) !void {
     const dir_path = std.fs.path.dirname(dest_path) orelse return error.InvalidPath;
-    std.fs.makeDirAbsolute(dir_path) catch |err| switch (err) {
+    std.Io.Dir.createDirAbsolute(compat.io(), dir_path, .default_dir) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
 
-    var child = std.process.Child.init(&.{
-        "curl",
-        "-L",
-        "--progress-bar",
-        "-o",
-        dest_path,
-        url,
-    }, std.heap.page_allocator);
-    child.stdin_behavior = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-
-    _ = try child.spawnAndWait();
+    var child = try std.process.spawn(compat.io(), .{
+        .argv = &.{
+            "curl",
+            "-L",
+            "--progress-bar",
+            "-o",
+            dest_path,
+            url,
+        },
+    });
+    _ = try child.wait(compat.io());
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
     // Auto-detect Metal shader path if not set
     setupMetalResources(allocator);
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(allocator);
+    defer allocator.free(args);
 
     if (args.len < 2) {
         printUsage();
@@ -339,17 +343,17 @@ fn transcribeRawCommand(allocator: std.mem.Allocator, args: []const []const u8) 
 
     std.debug.print("Loading raw audio: {s}\n", .{audio_path});
 
-    const file = try std.fs.cwd().openFile(audio_path, .{});
-    defer file.close();
+    const file = try std.Io.Dir.cwd().openFile(compat.io(), audio_path, .{});
+    defer file.close(compat.io());
 
-    const stat = try file.stat();
+    const stat = try file.stat(compat.io());
     const num_samples = stat.size / @sizeOf(f32);
 
     const samples = try allocator.alloc(f32, num_samples);
     defer allocator.free(samples);
 
     const bytes = std.mem.sliceAsBytes(samples);
-    _ = try file.readAll(bytes);
+    try readFileAll(file, bytes);
 
     std.debug.print("Transcribing {d} samples ({d:.2}s)...\n", .{
         samples.len,
@@ -376,7 +380,7 @@ fn recordCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try audio.start();
 
-    std.Thread.sleep(duration_secs * std.time.ns_per_s);
+    compat.sleepNanoseconds(duration_secs * std.time.ns_per_s);
 
     audio.stop();
 
@@ -387,11 +391,11 @@ fn recordCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
     });
 
     const output_path = "recording.raw";
-    const file = try std.fs.cwd().createFile(output_path, .{});
-    defer file.close();
+    const file = try std.Io.Dir.cwd().createFile(compat.io(), output_path, .{});
+    defer file.close(compat.io());
 
     const bytes = std.mem.sliceAsBytes(samples);
-    try file.writeAll(bytes);
+    try file.writeStreamingAll(compat.io(), bytes);
 
     std.debug.print("Saved raw audio to: {s}\n", .{output_path});
 }
@@ -484,61 +488,56 @@ fn liveCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     try audio.start();
 
-    // Streaming: transcribe rolling window every 2 seconds
     const sample_rate: usize = 16000;
-    const chunk_ms: usize = 2000; // 2 second chunks
-    const chunk_samples: usize = sample_rate * chunk_ms / 1000;
-    const overlap_ms: usize = 500; // 500ms overlap for context
-    const overlap_samples: usize = sample_rate * overlap_ms / 1000;
+    const chunk_samples: usize = sample_rate * 2; // 2s chunks
+    const overlap_samples: usize = sample_rate / 2; // 0.5s overlap for context
+    const stdout_file = std.Io.File.stdout();
+    const io = compat.io();
 
     var last_end: usize = 0;
 
     while (true) {
-        std.Thread.sleep(100 * std.time.ns_per_ms);
+        compat.sleepNanoseconds(100 * std.time.ns_per_ms);
 
         const sample_count = audio.getSampleCount();
         if (sample_count < last_end + chunk_samples) continue;
 
-        const samples = audio.copySamples(allocator) catch continue;
-        defer allocator.free(samples);
+        // Copy only new samples (plus overlap) instead of the entire buffer
+        const copy_from = if (last_end > overlap_samples) last_end - overlap_samples else 0;
+        const result = audio.copySamplesFrom(allocator, copy_from) catch continue;
+        defer allocator.free(result.samples);
 
-        // Take chunk with overlap from previous
-        const start = if (last_end > overlap_samples) last_end - overlap_samples else 0;
-        const chunk = samples[start..];
-
-        const text = transcriber.transcribe(chunk) catch |err| {
+        const text = transcriber.transcribe(result.samples) catch |err| {
             std.debug.print("\rError: {}\n", .{err});
-            last_end = samples.len;
+            last_end = result.total;
             continue;
         };
         defer allocator.free(text);
 
         const trimmed = std.mem.trim(u8, text, " \t\n");
         if (trimmed.len > 0 and !isHallucination(trimmed)) {
-            const stdout_fd = std.posix.STDOUT_FILENO;
-
             // Format with LLM if available
             if (has_llm) {
                 if (llama) |*l| {
                     const formatted = l.formatTranscript(trimmed) catch {
-                        _ = std.posix.write(stdout_fd, trimmed) catch {};
-                        _ = std.posix.write(stdout_fd, "\n") catch {};
-                        last_end = samples.len;
+                        stdout_file.writeStreamingAll(io, trimmed) catch {};
+                        stdout_file.writeStreamingAll(io, "\n") catch {};
+                        last_end = result.total;
                         continue;
                     };
                     defer allocator.free(formatted);
                     const fmt_trimmed = std.mem.trim(u8, formatted, " \t\n");
-                    _ = std.posix.write(stdout_fd, fmt_trimmed) catch {};
+                    stdout_file.writeStreamingAll(io, fmt_trimmed) catch {};
                 } else {
-                    _ = std.posix.write(stdout_fd, trimmed) catch {};
+                    stdout_file.writeStreamingAll(io, trimmed) catch {};
                 }
             } else {
-                _ = std.posix.write(stdout_fd, trimmed) catch {};
+                stdout_file.writeStreamingAll(io, trimmed) catch {};
             }
-            _ = std.posix.write(stdout_fd, "\n") catch {};
+            stdout_file.writeStreamingAll(io, "\n") catch {};
         }
 
-        last_end = samples.len;
+        last_end = result.total;
     }
 }
 
@@ -610,19 +609,16 @@ fn languagesCommand() void {
 }
 
 fn loadWavFile(allocator: std.mem.Allocator, path: []const u8) ![]f32 {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
+    const file = try std.Io.Dir.cwd().openFile(compat.io(), path, .{});
+    defer file.close(compat.io());
 
-    // Read WAV header
     var header: [44]u8 = undefined;
-    _ = try file.readAll(&header);
+    try readFileAll(file, &header);
 
-    // Verify WAV format
     if (!std.mem.eql(u8, header[0..4], "RIFF") or !std.mem.eql(u8, header[8..12], "WAVE")) {
         return error.InvalidWavFile;
     }
 
-    // Get format info
     const channels: u16 = std.mem.readInt(u16, header[22..24], .little);
     const sample_rate: u32 = std.mem.readInt(u32, header[24..28], .little);
     const bits_per_sample: u16 = std.mem.readInt(u16, header[34..36], .little);
@@ -634,38 +630,27 @@ fn loadWavFile(allocator: std.mem.Allocator, path: []const u8) ![]f32 {
         return error.UnsupportedBitDepth;
     }
 
-    // Read audio data
     const data_size: u32 = std.mem.readInt(u32, header[40..44], .little);
     const num_samples = data_size / (@as(u32, channels) * 2);
+    const frame_bytes = @as(usize, channels) * 2;
+
+    // Read entire audio data block at once instead of per-sample
+    const raw = try allocator.alloc(u8, data_size);
+    defer allocator.free(raw);
+    try readFileAll(file, raw);
 
     var samples = try allocator.alloc(f32, num_samples);
     errdefer allocator.free(samples);
 
-    // Read and convert samples
-    var buf: [2]u8 = undefined;
     for (0..num_samples) |i| {
-        // Read sample(s) and take first channel
-        _ = try file.readAll(&buf);
-        const sample_i16: i16 = std.mem.readInt(i16, &buf, .little);
+        const offset = i * frame_bytes;
+        const sample_i16 = std.mem.readInt(i16, raw[offset..][0..2], .little);
         samples[i] = @as(f32, @floatFromInt(sample_i16)) / 32768.0;
-
-        // Skip other channels
-        if (channels > 1) {
-            for (1..channels) |_| {
-                _ = try file.readAll(&buf);
-            }
-        }
     }
 
-    // Resample to 16kHz if needed
     if (sample_rate != 16000) {
         std.debug.print("Resampling from {d}Hz to 16000Hz\n", .{sample_rate});
-        const resampled = try AudioCapture.resample(
-            allocator,
-            samples,
-            @floatFromInt(sample_rate),
-            16000.0,
-        );
+        const resampled = try AudioCapture.resample(allocator, samples, @floatFromInt(sample_rate), 16000.0);
         allocator.free(samples);
         return resampled;
     }

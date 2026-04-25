@@ -2,7 +2,7 @@
     .name = .bobrwhisper,
     .version = "0.1.0",
     .fingerprint = 0xd8360594ece6e7b,
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.16.0",
 
     .dependencies = .{
         .whisper = .{

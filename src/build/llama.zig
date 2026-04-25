@@ -26,8 +26,8 @@ pub fn build(
         .linkage = .static,
     });
 
-    ggml.addIncludePath(llama_dep.path("ggml/include"));
-    ggml.addIncludePath(llama_dep.path("ggml/src"));
+    ggml.root_module.addIncludePath(llama_dep.path("ggml/include"));
+    ggml.root_module.addIncludePath(llama_dep.path("ggml/src"));
 
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
@@ -54,6 +54,18 @@ pub fn build(
         "-DGGML_COMMIT=\"unknown\"",
         "-DGGML_USE_CPU",
     };
+    // Zig 0.16's bundled libc++ headers (LLVM 21) declare std::__hash_memory
+    // as an exported dylib symbol, but macOS's system libc++ doesn't provide it.
+    // Compile a shim that supplies the missing definition so the static lib
+    // links against the system libc++ without undefined symbols.
+    if (is_darwin) {
+        ggml.root_module.addCSourceFiles(.{
+            .root = b.path("src/build"),
+            .files = &.{"libcxx_hash_shim.cpp"},
+            .flags = &.{"-std=c++17"},
+        });
+    }
+
     const cpp_flags: []const []const u8 = if (has_metal) &.{
         "-std=c++17",
         "-D_DARWIN_C_SOURCE",
@@ -80,31 +92,31 @@ pub fn build(
     };
 
     // Add all backend include paths first (needed for ggml-backend-reg.cpp)
-    ggml.addIncludePath(llama_dep.path("ggml/src/ggml-cpu"));
+    ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-cpu"));
     if (has_metal) {
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-metal"));
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-blas"));
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-metal"));
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-blas"));
     }
 
     // ggml core
-    ggml.addCSourceFiles(.{
+    ggml.root_module.addCSourceFiles(.{
         .root = llama_dep.path("ggml/src"),
         .files = &.{ "ggml.c", "ggml-alloc.c", "ggml-quants.c" },
         .flags = c_flags,
     });
-    ggml.addCSourceFiles(.{
+    ggml.root_module.addCSourceFiles(.{
         .root = llama_dep.path("ggml/src"),
         .files = &.{ "ggml-backend.cpp", "ggml-backend-reg.cpp", "ggml-opt.cpp", "ggml-threading.cpp", "gguf.cpp", "ggml-backend-dl.cpp" },
         .flags = cpp_flags,
     });
 
     // ggml-cpu
-    ggml.addCSourceFiles(.{
+    ggml.root_module.addCSourceFiles(.{
         .root = llama_dep.path("ggml/src/ggml-cpu"),
         .files = &.{ "ggml-cpu.c", "quants.c" },
         .flags = c_flags,
     });
-    ggml.addCSourceFiles(.{
+    ggml.root_module.addCSourceFiles(.{
         .root = llama_dep.path("ggml/src/ggml-cpu"),
         .files = &.{ "ggml-cpu.cpp", "ops.cpp", "binary-ops.cpp", "unary-ops.cpp", "vec.cpp", "repack.cpp", "hbm.cpp", "traits.cpp" },
         .flags = cpp_flags,
@@ -112,13 +124,13 @@ pub fn build(
 
     // aarch64
     if (target.result.cpu.arch == .aarch64) {
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/arch/arm"));
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/arch/arm"));
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-cpu/arch/arm"),
             .files = &.{ "cpu-feats.cpp", "repack.cpp" },
             .flags = cpp_flags,
         });
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-cpu/arch/arm"),
             .files = &.{"quants.c"},
             .flags = c_flags,
@@ -127,8 +139,8 @@ pub fn build(
 
     // x86 amx
     if (target.result.cpu.arch == .x86_64) {
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/amx"));
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/amx"));
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-cpu/amx"),
             .files = &.{ "amx.cpp", "mmq.cpp" },
             .flags = cpp_flags,
@@ -141,17 +153,17 @@ pub fn build(
 
     // metal
     if (has_metal) {
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-metal"));
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-metal"));
 
         const metal_flags_cpp = &[_][]const u8{ "-std=c++17", "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY" };
         const metal_flags_objc = &[_][]const u8{ "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY", "-fno-objc-arc" };
 
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-metal"),
             .files = &.{ "ggml-metal.cpp", "ggml-metal-common.cpp", "ggml-metal-ops.cpp", "ggml-metal-device.cpp" },
             .flags = metal_flags_cpp,
         });
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-metal"),
             .files = &.{ "ggml-metal-context.m", "ggml-metal-device.m" },
             .flags = metal_flags_objc,
@@ -190,17 +202,17 @@ pub fn build(
         gen_asm.addFileArg(merged_metal);
         const embed_asm = gen_asm.addOutputFileArg("ggml-metal-embed.s");
 
-        ggml.addAssemblyFile(embed_asm);
+        ggml.root_module.addAssemblyFile(embed_asm);
 
-        ggml.linkFramework("Foundation");
-        ggml.linkFramework("Metal");
-        ggml.linkFramework("MetalKit");
+        ggml.root_module.linkFramework("Foundation", .{});
+        ggml.root_module.linkFramework("Metal", .{});
+        ggml.root_module.linkFramework("MetalKit", .{});
     }
 
     // blas (accelerate)
     if (has_metal) {
-        ggml.addIncludePath(llama_dep.path("ggml/src/ggml-blas"));
-        ggml.addCSourceFiles(.{
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-blas"));
+        ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-blas"),
             .files = &.{"ggml-blas.cpp"},
             .flags = &.{
@@ -214,7 +226,7 @@ pub fn build(
             },
         });
         // Accelerate framework path already added above via sdk_path
-        ggml.linkFramework("Accelerate");
+        ggml.root_module.linkFramework("Accelerate", .{});
     }
 
     // llama
@@ -228,10 +240,10 @@ pub fn build(
         .linkage = .static,
     });
 
-    llama_lib.addIncludePath(llama_dep.path("include"));
-    llama_lib.addIncludePath(llama_dep.path("src"));
-    llama_lib.addIncludePath(llama_dep.path("ggml/include"));
-    llama_lib.addIncludePath(llama_dep.path("ggml/src"));
+    llama_lib.root_module.addIncludePath(llama_dep.path("include"));
+    llama_lib.root_module.addIncludePath(llama_dep.path("src"));
+    llama_lib.root_module.addIncludePath(llama_dep.path("ggml/include"));
+    llama_lib.root_module.addIncludePath(llama_dep.path("ggml/src"));
 
     const llama_flags = if (has_metal) &[_][]const u8{
         "-std=c++17",
@@ -245,7 +257,7 @@ pub fn build(
         "-DGGML_USE_CPU",
     };
 
-    llama_lib.addCSourceFiles(.{
+    llama_lib.root_module.addCSourceFiles(.{
         .root = llama_dep.path("src"),
         .files = &.{
             "llama.cpp",               "llama-adapter.cpp",            "llama-arch.cpp",
@@ -262,8 +274,8 @@ pub fn build(
     });
 
     // models
-    llama_lib.addIncludePath(llama_dep.path("src/models"));
-    llama_lib.addCSourceFiles(.{
+    llama_lib.root_module.addIncludePath(llama_dep.path("src/models"));
+    llama_lib.root_module.addCSourceFiles(.{
         .root = llama_dep.path("src/models"),
         .files = &.{
             "afmoe.cpp",           "apertus.cpp",             "arcee.cpp",            "arctic.cpp",
@@ -296,7 +308,7 @@ pub fn build(
         .flags = llama_flags,
     });
 
-    llama_lib.linkLibrary(ggml);
+    llama_lib.root_module.linkLibrary(ggml);
 
     if (target.result.os.tag.isDarwin()) {
         try AppleSdk.addPaths(b, llama_lib);
@@ -311,7 +323,7 @@ pub fn build(
 }
 
 pub fn link(compile: *std.Build.Step.Compile, llama: LlamaLib) void {
-    compile.linkLibrary(llama.lib);
-    compile.addIncludePath(llama.include_path);
-    compile.addIncludePath(llama.ggml_include_path);
+    compile.root_module.linkLibrary(llama.lib);
+    compile.root_module.addIncludePath(llama.include_path);
+    compile.root_module.addIncludePath(llama.ggml_include_path);
 }

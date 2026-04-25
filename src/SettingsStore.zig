@@ -4,9 +4,58 @@ const c_api = @import("c_api.zig");
 
 const is_apple = builtin.os.tag == .macos or builtin.os.tag == .ios;
 
-const cf = if (is_apple) @cImport({
-    @cInclude("CoreFoundation/CoreFoundation.h");
-}) else struct {};
+/// Minimal CoreFoundation ABI surface for CFPreferences.
+///
+/// Zig 0.16 replaced Clang with Aro for @cImport and Aro cannot translate
+/// Apple's mach_msg union types pulled in transitively by CoreFoundation.h.
+/// Declaring only the symbols we actually call avoids the translation entirely.
+const cf = if (is_apple) struct {
+    const CFTypeRef = *anyopaque;
+    const CFAllocatorRef = ?*anyopaque;
+    const CFStringRef = *anyopaque;
+    const CFNumberRef = *anyopaque;
+    const CFBooleanRef = *anyopaque;
+    const CFIndex = isize;
+    const CFStringEncoding = u32;
+    const CFNumberType = CFIndex;
+    const Boolean = u8;
+
+    const kCFStringEncodingUTF8: CFStringEncoding = 0x08000100;
+    const kCFNumberSInt32Type: CFNumberType = 3;
+
+    const kCFAllocatorDefault: CFAllocatorRef = null;
+    /// C declares `const CFBooleanRef kCFBooleanTrue;` — a global variable
+    /// holding a pointer.  `@extern` yields a pointer to that storage, so we
+    /// declare `*const CFBooleanRef` and dereference at the use-site.
+    const kCFBooleanTrue: *const CFBooleanRef = @extern(*const CFBooleanRef, .{ .name = "kCFBooleanTrue" });
+    const kCFBooleanFalse: *const CFBooleanRef = @extern(*const CFBooleanRef, .{ .name = "kCFBooleanFalse" });
+
+    extern "c" fn CFRelease(cf_obj: CFTypeRef) void;
+
+    extern "c" fn CFStringCreateWithBytes(
+        alloc: CFAllocatorRef,
+        bytes: [*]const u8,
+        num_bytes: CFIndex,
+        encoding: CFStringEncoding,
+        is_external_representation: Boolean,
+    ) ?CFStringRef;
+
+    extern "c" fn CFNumberCreate(
+        allocator: CFAllocatorRef,
+        the_type: CFNumberType,
+        value_ptr: *const anyopaque,
+    ) ?CFNumberRef;
+
+    extern "c" fn CFPreferencesSetAppValue(
+        key: CFStringRef,
+        value: ?CFTypeRef,
+        application_id: CFStringRef,
+    ) void;
+
+    extern "c" fn CFPreferencesAppSynchronize(
+        application_id: CFStringRef,
+    ) Boolean;
+} else struct {};
 
 pub const WriteError = error{
     UnsupportedPlatform,
@@ -56,24 +105,24 @@ fn writeApple(domain: []const u8, settings: c_api.Settings) WriteError!void {
     const tone_number = cf.CFNumberCreate(
         cf.kCFAllocatorDefault,
         cf.kCFNumberSInt32Type,
-        &tone_value,
+        @ptrCast(&tone_value),
     ) orelse return WriteError.OutOfMemory;
     defer cf.CFRelease(tone_number);
 
     cf.CFPreferencesSetAppValue(key_tone, tone_number, domain_cf);
     cf.CFPreferencesSetAppValue(
         key_remove_filler_words,
-        if (settings.remove_filler_words) cf.kCFBooleanTrue else cf.kCFBooleanFalse,
+        if (settings.remove_filler_words) cf.kCFBooleanTrue.* else cf.kCFBooleanFalse.*,
         domain_cf,
     );
     cf.CFPreferencesSetAppValue(
         key_auto_punctuate,
-        if (settings.auto_punctuate) cf.kCFBooleanTrue else cf.kCFBooleanFalse,
+        if (settings.auto_punctuate) cf.kCFBooleanTrue.* else cf.kCFBooleanFalse.*,
         domain_cf,
     );
     cf.CFPreferencesSetAppValue(
         key_use_llm_formatting,
-        if (settings.use_llm_formatting) cf.kCFBooleanTrue else cf.kCFBooleanFalse,
+        if (settings.use_llm_formatting) cf.kCFBooleanTrue.* else cf.kCFBooleanFalse.*,
         domain_cf,
     );
 

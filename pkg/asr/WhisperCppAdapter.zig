@@ -6,6 +6,13 @@ const WhisperCppAdapter = @This();
 const builtin = @import("builtin");
 const bridge = @import("whisper_bridge.zig");
 
+fn getenvVar(name: [:0]const u8) ?[:0]const u8 {
+    const value = getenv_c(name.ptr) orelse return null;
+    return std.mem.span(value);
+}
+
+const getenv_c: *const fn ([*:0]const u8) callconv(.c) ?[*:0]const u8 = @extern(*const fn ([*:0]const u8) callconv(.c) ?[*:0]const u8, .{ .name = "getenv" });
+
 allocator: std.mem.Allocator,
 model_path: []const u8,
 language: []const u8,
@@ -37,7 +44,7 @@ fn shouldUseGpu() bool {
     if (builtin.os.tag == .ios and builtin.abi == .simulator) {
         return false;
     }
-    if (std.posix.getenv("GGML_METAL_DISABLE") != null) {
+    if (getenvVar("GGML_METAL_DISABLE") != null) {
         return false;
     }
     return true;
@@ -53,7 +60,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
     const model_path_z = try allocator.dupeZ(u8, config.model_path);
     defer allocator.free(model_path_z);
 
-    std.fs.accessAbsolute(model_path_z, .{}) catch |err| {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), model_path_z, .{}) catch |err| {
         std.log.err("Model file not found: {s} - {}", .{ model_path_z, err });
         return error.ModelNotFound;
     };
@@ -141,7 +148,7 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         return try self.allocator.dupe(u8, "");
     }
 
-    var output: std.ArrayListUnmanaged(u8) = .{};
+    var output: std.ArrayListUnmanaged(u8) = .empty;
     errdefer output.deinit(self.allocator);
 
     for (0..@as(usize, @intCast(n_segments))) |i| {

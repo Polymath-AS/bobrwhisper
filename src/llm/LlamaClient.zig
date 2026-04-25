@@ -1,6 +1,7 @@
 //! llama.cpp wrapper for local LLM inference
 
 const std = @import("std");
+const compat = @import("../compat.zig");
 const c = @cImport({
     @cInclude("llama.h");
 });
@@ -119,7 +120,7 @@ pub fn generateStreaming(
     var output: std.ArrayListUnmanaged(u8) = .empty;
     errdefer output.deinit(self.allocator);
     const stream_interval_ns: i128 = 40 * std.time.ns_per_ms;
-    var last_stream_ns: i128 = std.time.nanoTimestamp() - stream_interval_ns;
+    var last_stream_ns: i128 = compat.nanoTimestamp() - stream_interval_ns;
     var last_streamed_len: usize = 0;
 
     var n_cur: i32 = n_prompt;
@@ -140,7 +141,7 @@ pub fn generateStreaming(
             try output.appendSlice(self.allocator, buf[0..@intCast(n)]);
 
             if (stream_sink) |sink| {
-                const now_ns = std.time.nanoTimestamp();
+                const now_ns = compat.nanoTimestamp();
                 if (output.items.len > last_streamed_len and now_ns - last_stream_ns >= stream_interval_ns) {
                     sink(stream_userdata, output.items);
                     last_stream_ns = now_ns;

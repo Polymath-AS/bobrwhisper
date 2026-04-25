@@ -9,7 +9,7 @@ const App = @import("App.zig");
 
 pub const version = "0.1.0";
 
-const GPA = std.heap.GeneralPurposeAllocator(.{});
+const GPA = std.heap.DebugAllocator(.{});
 var gpa: ?GPA = null;
 var global_allocator: ?std.mem.Allocator = null;
 

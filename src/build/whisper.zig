@@ -27,11 +27,11 @@ pub fn build(
         .linkage = .static,
     });
 
-    whisper_lib.addIncludePath(whisper_dep.path("include"));
-    whisper_lib.addIncludePath(whisper_dep.path("src"));
-    whisper_lib.addIncludePath(llama.ggml_include_path);
+    whisper_lib.root_module.addIncludePath(whisper_dep.path("include"));
+    whisper_lib.root_module.addIncludePath(whisper_dep.path("src"));
+    whisper_lib.root_module.addIncludePath(llama.ggml_include_path);
 
-    var flags = std.ArrayListUnmanaged([]const u8){};
+    var flags = std.ArrayListUnmanaged([]const u8).empty;
     defer flags.deinit(b.graph.arena);
     try flags.append(b.graph.arena, "-std=c++17");
     if (target.result.os.tag.isDarwin()) {
@@ -56,13 +56,13 @@ pub fn build(
     }
     try flags.append(b.graph.arena, "-DWHISPER_VERSION=\"1.0.0\"");
 
-    whisper_lib.addCSourceFiles(.{
+    whisper_lib.root_module.addCSourceFiles(.{
         .root = whisper_dep.path("src"),
         .files = &.{"whisper.cpp"},
         .flags = flags.items,
     });
 
-    whisper_lib.linkLibrary(llama.lib);
+    whisper_lib.root_module.linkLibrary(llama.lib);
 
     if (target.result.os.tag.isDarwin()) {
         try AppleSdk.addPaths(b, whisper_lib);
@@ -75,6 +75,6 @@ pub fn build(
 }
 
 pub fn link(compile: *std.Build.Step.Compile, whisper: WhisperLib) void {
-    compile.linkLibrary(whisper.lib);
-    compile.addIncludePath(whisper.include_path);
+    compile.root_module.linkLibrary(whisper.lib);
+    compile.root_module.addIncludePath(whisper.include_path);
 }

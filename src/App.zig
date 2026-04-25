@@ -1,6 +1,7 @@
 //! Main application state
 
 const std = @import("std");
+const compat = @import("compat.zig");
 const builtin = @import("builtin");
 const asr = @import("asr");
 const c_api = @import("c_api.zig");
@@ -40,7 +41,7 @@ custom_prompt: ?[]u8 = null,
 live_thread: ?std.Thread = null,
 live_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 last_transcribed_len: usize = 0,
-frozen_transcript: std.ArrayListUnmanaged(u8) = .{},
+frozen_transcript: std.ArrayListUnmanaged(u8) = .empty,
 frozen_sample_count: usize = 0,
 
 pub fn init(allocator: std.mem.Allocator, config: c_api.RuntimeConfig) !App {
@@ -87,7 +88,7 @@ fn getModelPathForDescriptor(
 }
 
 fn pathExists(path: []const u8) bool {
-    std.fs.accessAbsolute(path, .{}) catch {
+    compat.accessAbsolute(path) catch {
         return false;
     };
     return true;
@@ -155,7 +156,7 @@ pub fn loadModelByID(self: *App, model_id: []const u8) !void {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const model_path = try self.getModelPathForDescriptor(descriptor, &path_buf);
 
-    std.fs.accessAbsolute(model_path, .{}) catch {
+    compat.accessAbsolute(model_path) catch {
         std.log.err("Model not found: {s}", .{model_path});
         self.notifyError("Model not found. Please download it first.");
         return error.ModelNotFound;
@@ -187,7 +188,7 @@ pub fn loadModelByID(self: *App, model_id: []const u8) !void {
     if (asr.ModelRegistry.preferredLiveModel(descriptor)) |live_descriptor| {
         var live_path_buf: [std.fs.max_path_bytes]u8 = undefined;
         if (self.getModelPathForDescriptor(live_descriptor, &live_path_buf)) |live_model_path| {
-            if (std.fs.accessAbsolute(live_model_path, .{})) |_| {
+            if (compat.accessAbsolute(live_model_path)) |_| {
                 self.live_transcriber = RuntimeAdapter.init(self.allocator, live_descriptor, .{
                     .model_path = live_model_path,
                     .language = "en",
@@ -231,7 +232,7 @@ pub fn modelExistsByID(self: *App, model_id: []const u8) bool {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const model_path = self.getModelPathForDescriptor(descriptor, &path_buf) catch return false;
 
-    std.fs.accessAbsolute(model_path, .{}) catch {
+    compat.accessAbsolute(model_path) catch {
         return false;
     };
     return true;
@@ -298,7 +299,7 @@ fn liveTranscriptionLoop(self: *App, language: [:0]const u8) void {
     const chunk_duration: usize = 16000 * 5; // 5s per chunk
 
     while (!self.live_stop.load(.seq_cst)) {
-        std.Thread.sleep(interval_ms * std.time.ns_per_ms);
+        compat.sleepNanoseconds(interval_ms * std.time.ns_per_ms);
 
         if (self.live_stop.load(.seq_cst)) break;
 
@@ -622,54 +623,25 @@ pub fn getTranscriptLogRecentJson(self: *App, limit: usize) !c_api.String {
     const entries = try self.log_store.readRecent(self.allocator, limit);
     defer LogStore.freeEntries(self.allocator, entries);
 
-    var json_buffer: std.ArrayListUnmanaged(u8) = .{};
-    errdefer json_buffer.deinit(self.allocator);
+    const JsonEntry = struct {
+        created_at_unix_ms: i64,
+        text: []const u8,
+        formatted_text: ?[]const u8,
+    };
 
-    try json_buffer.append(self.allocator, '[');
-    for (entries, 0..) |entry, idx| {
-        if (idx > 0) {
-            try json_buffer.append(self.allocator, ',');
-        }
-        try json_buffer.append(self.allocator, '{');
-        try json_buffer.appendSlice(self.allocator, "\"created_at_unix_ms\":");
-        try json_buffer.writer(self.allocator).print("{d}", .{entry.created_at_unix_ms});
-        try json_buffer.appendSlice(self.allocator, ",\"text\":");
-        try appendJsonEscapedString(&json_buffer, self.allocator, entry.text);
-        if (entry.formatted_text) |ft| {
-            try json_buffer.appendSlice(self.allocator, ",\"formatted_text\":");
-            try appendJsonEscapedString(&json_buffer, self.allocator, ft);
-        }
-        try json_buffer.append(self.allocator, '}');
+    const json_entries = try self.allocator.alloc(JsonEntry, entries.len);
+    defer self.allocator.free(json_entries);
+
+    for (entries, 0..) |entry, i| {
+        json_entries[i] = .{
+            .created_at_unix_ms = entry.created_at_unix_ms,
+            .text = entry.text,
+            .formatted_text = entry.formatted_text,
+        };
     }
-    try json_buffer.append(self.allocator, ']');
 
-    const json_slice = try json_buffer.toOwnedSlice(self.allocator);
-    return c_api.String.fromSlice(json_slice);
-}
-
-fn appendJsonEscapedString(
-    buffer: *std.ArrayListUnmanaged(u8),
-    allocator: std.mem.Allocator,
-    text: []const u8,
-) !void {
-    try buffer.append(allocator, '"');
-    for (text) |ch| {
-        switch (ch) {
-            '"' => try buffer.appendSlice(allocator, "\\\""),
-            '\\' => try buffer.appendSlice(allocator, "\\\\"),
-            '\n' => try buffer.appendSlice(allocator, "\\n"),
-            '\r' => try buffer.appendSlice(allocator, "\\r"),
-            '\t' => try buffer.appendSlice(allocator, "\\t"),
-            else => {
-                if (ch < 0x20) {
-                    try buffer.writer(allocator).print("\\u00{x:0>2}", .{ch});
-                } else {
-                    try buffer.append(allocator, ch);
-                }
-            },
-        }
-    }
-    try buffer.append(allocator, '"');
+    const json = try std.json.Stringify.valueAlloc(self.allocator, json_entries, .{});
+    return c_api.String.fromSlice(json);
 }
 
 const LlmStreamContext = struct {

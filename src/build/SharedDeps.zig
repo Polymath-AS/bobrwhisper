@@ -73,9 +73,9 @@ pub fn link(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Com
     whisper_build.link(compile, self.whisper);
     llama_build.link(compile, self.llama);
     try linkAppleFrameworks(b, compile, self.target);
-    compile.linkSystemLibrary("sqlite3");
-    compile.linkLibC();
-    compile.linkLibCpp();
+    compile.root_module.linkSystemLibrary("sqlite3", .{});
+    compile.root_module.linkSystemLibrary("c", .{});
+    compile.root_module.linkSystemLibrary("c++", .{});
 }
 
 fn linkAppleFrameworks(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) !void {
@@ -83,14 +83,14 @@ fn linkAppleFrameworks(b: *std.Build, compile: *std.Build.Step.Compile, target: 
     if (os_tag == .macos or os_tag == .ios) {
         try AppleSdk.addPaths(b, compile);
 
-        compile.linkFramework("Foundation");
-        compile.linkFramework("CoreFoundation");
-        compile.linkFramework("Accelerate");
-        compile.linkFramework("Metal");
-        compile.linkFramework("MetalKit");
+        compile.root_module.linkFramework("Foundation", .{});
+        compile.root_module.linkFramework("CoreFoundation", .{});
+        compile.root_module.linkFramework("Accelerate", .{});
+        compile.root_module.linkFramework("Metal", .{});
+        compile.root_module.linkFramework("MetalKit", .{});
     }
     if (os_tag == .macos) {
-        compile.linkFramework("CoreAudio");
-        compile.linkFramework("AudioToolbox");
+        compile.root_module.linkFramework("CoreAudio", .{});
+        compile.root_module.linkFramework("AudioToolbox", .{});
     }
 }

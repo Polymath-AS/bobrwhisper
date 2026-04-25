@@ -3,11 +3,106 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = if (builtin.os.tag == .macos) @cImport({
-    @cInclude("AudioToolbox/AudioToolbox.h");
-}) else struct {};
+const c = if (builtin.os.tag == .macos) MacAudio else struct {};
+
+/// Minimal CoreAudio/AudioQueue ABI surface used by this module.
+///
+/// Zig 0.16 deprecated @cImport in favor of build-system C translation, and
+/// Apple's modern AudioToolbox headers use Clang blocks that translate-c cannot
+/// consume reliably. Keeping this narrow extern surface avoids translating the
+/// entire SDK while preserving the exact C ABI for the hot audio callback path.
+const MacAudio = struct {
+    pub const OSStatus = i32;
+    pub const UInt32 = u32;
+    pub const Float64 = f64;
+    pub const AudioFormatID = UInt32;
+    pub const AudioFormatFlags = UInt32;
+    pub const AudioQueueRef = ?*opaque {};
+
+    pub const AudioStreamBasicDescription = extern struct {
+        mSampleRate: Float64,
+        mFormatID: AudioFormatID,
+        mFormatFlags: AudioFormatFlags,
+        mBytesPerPacket: UInt32,
+        mFramesPerPacket: UInt32,
+        mBytesPerFrame: UInt32,
+        mChannelsPerFrame: UInt32,
+        mBitsPerChannel: UInt32,
+        mReserved: UInt32,
+    };
+
+    pub const AudioTimeStamp = opaque {};
+    pub const AudioStreamPacketDescription = opaque {};
+
+    pub const AudioQueueBuffer = extern struct {
+        mAudioDataBytesCapacity: UInt32,
+        mAudioData: ?*anyopaque,
+        mAudioDataByteSize: UInt32,
+        mUserData: ?*anyopaque,
+        mPacketDescriptionCapacity: UInt32,
+        mPacketDescriptions: ?*AudioStreamPacketDescription,
+        mPacketDescriptionCount: UInt32,
+    };
+    pub const AudioQueueBufferRef = *AudioQueueBuffer;
+
+    pub const AudioQueueInputCallback = *const fn (
+        inUserData: ?*anyopaque,
+        inAQ: AudioQueueRef,
+        inBuffer: AudioQueueBufferRef,
+        inStartTime: *const AudioTimeStamp,
+        inNumberPacketDescriptions: UInt32,
+        inPacketDescs: ?*const AudioStreamPacketDescription,
+    ) callconv(.c) void;
+
+    pub const noErr: OSStatus = 0;
+    pub const kAudioFormatLinearPCM: AudioFormatID = 0x6c70636d;
+    pub const kAudioFormatFlagIsFloat: AudioFormatFlags = 1 << 0;
+    pub const kAudioFormatFlagIsPacked: AudioFormatFlags = 1 << 3;
+
+    pub extern "c" fn AudioQueueNewInput(
+        inFormat: *const AudioStreamBasicDescription,
+        inCallbackProc: AudioQueueInputCallback,
+        inUserData: ?*anyopaque,
+        inCallbackRunLoop: ?*anyopaque,
+        inCallbackRunLoopMode: ?*anyopaque,
+        inFlags: UInt32,
+        outAQ: *AudioQueueRef,
+    ) OSStatus;
+
+    pub extern "c" fn AudioQueueAllocateBuffer(
+        inAQ: AudioQueueRef,
+        inBufferByteSize: UInt32,
+        outBuffer: *AudioQueueBufferRef,
+    ) OSStatus;
+
+    pub extern "c" fn AudioQueueEnqueueBuffer(
+        inAQ: AudioQueueRef,
+        inBuffer: AudioQueueBufferRef,
+        inNumPacketDescs: UInt32,
+        inPacketDescs: ?*const AudioStreamPacketDescription,
+    ) OSStatus;
+
+    pub extern "c" fn AudioQueueStart(inAQ: AudioQueueRef, inStartTime: ?*const AudioTimeStamp) OSStatus;
+    pub extern "c" fn AudioQueueStop(inAQ: AudioQueueRef, inImmediate: u8) OSStatus;
+    pub extern "c" fn AudioQueueDispose(inAQ: AudioQueueRef, inImmediate: u8) OSStatus;
+};
 
 const AudioCapture = @This();
+
+const SpinMutex = struct {
+    inner: std.atomic.Mutex = .unlocked,
+
+    fn lock(self: *SpinMutex) void {
+        while (!self.inner.tryLock()) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    fn unlock(self: *SpinMutex) void {
+        self.inner.unlock();
+    }
+};
+
 
 allocator: std.mem.Allocator,
 is_recording: bool = false,
@@ -20,7 +115,7 @@ audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
 
 // Buffer for captured audio (protected by mutex for thread safety)
 buffer: std.ArrayListUnmanaged(f32),
-mutex: std.Thread.Mutex = .{},
+mutex: SpinMutex = .{},
 // RMS audio level from the most recent callback buffer, updated under mutex
 audio_level: f32 = 0,
 
@@ -39,7 +134,7 @@ pub fn initWithConfig(allocator: std.mem.Allocator, config: Config) !AudioCaptur
         .allocator = allocator,
         .sample_rate = config.sample_rate,
         .buffer_duration_ms = config.buffer_duration_ms,
-        .buffer = .{},
+        .buffer = .empty,
     };
 }
 
@@ -204,9 +299,9 @@ fn audioInputCallback(
     userdata: ?*anyopaque,
     queue: c.AudioQueueRef,
     buffer: c.AudioQueueBufferRef,
-    _: [*c]const c.AudioTimeStamp,
+    _: *const c.AudioTimeStamp,
     num_packets: u32,
-    _: [*c]const c.AudioStreamPacketDescription,
+    _: ?*const c.AudioStreamPacketDescription,
 ) callconv(.c) void {
     const self: *AudioCapture = @ptrCast(@alignCast(userdata orelse return));
 
