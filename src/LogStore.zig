@@ -1,9 +1,69 @@
 const std = @import("std");
 const compat = @import("compat.zig");
 
-const sqlite = @cImport({
-    @cInclude("sqlite3.h");
-});
+/// Minimal sqlite3 ABI surface used by LogStore.
+///
+/// The sqlite3 C ABI is stable across versions, so hand-written extern
+/// declarations are safe and avoid the deprecated @cImport path.
+const sqlite = struct {
+    pub const sqlite3 = opaque {};
+    pub const sqlite3_stmt = opaque {};
+
+    pub const SQLITE_OK: c_int = 0;
+    pub const SQLITE_ROW: c_int = 100;
+    pub const SQLITE_DONE: c_int = 101;
+    pub const SQLITE_OPEN_READWRITE: c_int = 0x00000002;
+    pub const SQLITE_OPEN_CREATE: c_int = 0x00000004;
+    pub const SQLITE_OPEN_FULLMUTEX: c_int = 0x00010000;
+
+    pub extern fn sqlite3_open_v2(
+        filename: [*:0]const u8,
+        ppDb: *?*sqlite3,
+        flags: c_int,
+        zVfs: ?[*:0]const u8,
+    ) c_int;
+
+    pub extern fn sqlite3_close(db: *sqlite3) c_int;
+
+    pub extern fn sqlite3_exec(
+        db: *sqlite3,
+        sql: [*]const u8,
+        callback: ?*const anyopaque,
+        arg: ?*anyopaque,
+        errmsg: ?*?[*:0]u8,
+    ) c_int;
+
+    pub extern fn sqlite3_prepare_v2(
+        db: *sqlite3,
+        sql: [*]const u8,
+        nByte: c_int,
+        ppStmt: *?*sqlite3_stmt,
+        pzTail: ?*?[*]const u8,
+    ) c_int;
+
+    pub extern fn sqlite3_finalize(stmt: ?*sqlite3_stmt) c_int;
+    pub extern fn sqlite3_step(stmt: ?*sqlite3_stmt) c_int;
+
+    pub extern fn sqlite3_bind_int64(
+        stmt: ?*sqlite3_stmt,
+        col: c_int,
+        value: i64,
+    ) c_int;
+
+    pub extern fn sqlite3_bind_text(
+        stmt: ?*sqlite3_stmt,
+        col: c_int,
+        text: [*]const u8,
+        n: c_int,
+        destructor: ?*const anyopaque,
+    ) c_int;
+
+    pub extern fn sqlite3_bind_null(stmt: ?*sqlite3_stmt, col: c_int) c_int;
+
+    pub extern fn sqlite3_column_int64(stmt: ?*sqlite3_stmt, col: c_int) i64;
+    pub extern fn sqlite3_column_text(stmt: ?*sqlite3_stmt, col: c_int) ?[*:0]const u8;
+    pub extern fn sqlite3_column_bytes(stmt: ?*sqlite3_stmt, col: c_int) c_int;
+};
 
 const LogStore = @This();
 
