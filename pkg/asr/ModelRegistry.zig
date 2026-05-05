@@ -7,15 +7,25 @@ pub const ModelCapability = types.ModelCapability;
 pub const capabilityBit = types.capabilityBit;
 
 pub const whisper_tiny_id: [:0]const u8 = "whisper-tiny";
+pub const whisper_tiny_en_id: [:0]const u8 = "whisper-tiny.en";
 pub const whisper_base_id: [:0]const u8 = "whisper-base";
+pub const whisper_base_en_id: [:0]const u8 = "whisper-base.en";
 pub const whisper_small_id: [:0]const u8 = "whisper-small";
+pub const whisper_small_en_id: [:0]const u8 = "whisper-small.en";
 pub const whisper_medium_id: [:0]const u8 = "whisper-medium";
+pub const whisper_medium_en_id: [:0]const u8 = "whisper-medium.en";
 pub const whisper_large_v3_id: [:0]const u8 = "whisper-large-v3";
 pub const whisper_large_v3_turbo_id: [:0]const u8 = "whisper-large-v3-turbo";
 
 const whisper_capabilities =
     capabilityBit(.transcribe) |
     capabilityBit(.stream_partial);
+
+// English-only models cannot do language detection or translation. Only the
+// `transcribe` + `stream_partial` bits apply, same as multilingual — but the
+// .en variant must be paired with `language=en`. Tiny→medium are the only
+// sizes OpenAI ever released a `.en` for; large/turbo are multilingual-only.
+const whisper_capabilities_en = whisper_capabilities;
 
 const descriptors = [_]ModelDescriptor{
     .{
@@ -31,6 +41,17 @@ const descriptors = [_]ModelDescriptor{
         .legacy_storage_key = "tiny",
     },
     .{
+        .id = whisper_tiny_en_id,
+        .display_name = "Whisper Tiny English (~75 MB)",
+        .family = "whisper",
+        .runtime = .whisper_cpp,
+        .local_filename = "ggml-tiny.en.bin",
+        .download_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
+        .size_bytes = 75 * 1024 * 1024,
+        .capabilities = whisper_capabilities_en,
+        .available_on_this_device = true,
+    },
+    .{
         .id = whisper_base_id,
         .display_name = "Whisper Base (~142 MB)",
         .family = "whisper",
@@ -41,6 +62,17 @@ const descriptors = [_]ModelDescriptor{
         .capabilities = whisper_capabilities,
         .available_on_this_device = true,
         .legacy_storage_key = "base",
+    },
+    .{
+        .id = whisper_base_en_id,
+        .display_name = "Whisper Base English (~142 MB)",
+        .family = "whisper",
+        .runtime = .whisper_cpp,
+        .local_filename = "ggml-base.en.bin",
+        .download_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+        .size_bytes = 142 * 1024 * 1024,
+        .capabilities = whisper_capabilities_en,
+        .available_on_this_device = true,
     },
     .{
         .id = whisper_small_id,
@@ -56,6 +88,20 @@ const descriptors = [_]ModelDescriptor{
         .preferred_live_model_id = whisper_base_id,
     },
     .{
+        .id = whisper_small_en_id,
+        .display_name = "Whisper Small English (~466 MB)",
+        .family = "whisper",
+        .runtime = .whisper_cpp,
+        .local_filename = "ggml-small.en.bin",
+        .download_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
+        .size_bytes = 466 * 1024 * 1024,
+        .capabilities = whisper_capabilities_en,
+        .available_on_this_device = true,
+        // Live partials still benefit from the smaller English base — same
+        // size class as the multilingual sibling.
+        .preferred_live_model_id = whisper_base_en_id,
+    },
+    .{
         .id = whisper_medium_id,
         .display_name = "Whisper Medium (~1.5 GB)",
         .family = "whisper",
@@ -67,6 +113,18 @@ const descriptors = [_]ModelDescriptor{
         .available_on_this_device = true,
         .legacy_storage_key = "medium",
         .preferred_live_model_id = whisper_base_id,
+    },
+    .{
+        .id = whisper_medium_en_id,
+        .display_name = "Whisper Medium English (~1.5 GB)",
+        .family = "whisper",
+        .runtime = .whisper_cpp,
+        .local_filename = "ggml-medium.en.bin",
+        .download_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin",
+        .size_bytes = 1500 * 1024 * 1024,
+        .capabilities = whisper_capabilities_en,
+        .available_on_this_device = true,
+        .preferred_live_model_id = whisper_base_en_id,
     },
     .{
         .id = whisper_large_v3_id,
