@@ -16,6 +16,7 @@ pub extern fn bobrwhisper_whisper_transcribe(
     vad_min_speech_ms: i32,
     vad_min_silence_ms: i32,
     vad_speech_pad_ms: i32,
+    initial_prompt: ?[*:0]const u8,
 ) c_int;
 pub extern fn bobrwhisper_whisper_segment_count(ctx: *Context) i32;
 pub extern fn bobrwhisper_whisper_segment_text(ctx: *Context, segment_index: i32) ?[*:0]const u8;

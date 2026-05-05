@@ -35,7 +35,8 @@ int bobrwhisper_whisper_transcribe(
     float vad_threshold,
     int32_t vad_min_speech_ms,
     int32_t vad_min_silence_ms,
-    int32_t vad_speech_pad_ms
+    int32_t vad_speech_pad_ms,
+    const char * initial_prompt
 ) {
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.print_realtime = false;
@@ -60,6 +61,14 @@ int bobrwhisper_whisper_transcribe(
 
     if (language != NULL && language[0] != '\0') {
         params.language = language;
+    }
+
+    // Initial prompt biases decoding toward proper nouns and domain vocabulary.
+    // Whisper allows up to ~224 tokens of prompt; the caller is responsible for
+    // staying under that bound. Pointer must outlive the whisper_full() call,
+    // which it does because the Zig adapter holds it for the call duration.
+    if (initial_prompt != NULL && initial_prompt[0] != '\0') {
+        params.initial_prompt = initial_prompt;
     }
 
     return whisper_full(ctx, params, samples, sample_count);

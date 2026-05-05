@@ -16,6 +16,9 @@ pub const LoadConfig = struct {
     vad_min_speech_ms: i32 = 250,
     vad_min_silence_ms: i32 = 100,
     vad_speech_pad_ms: i32 = 30,
+    /// Optional decoder bias prompt (proper nouns, vocabulary). Whisper caps
+    /// this at ~224 tokens. Caller is responsible for staying under the bound.
+    initial_prompt: ?[]const u8 = null,
 };
 
 pub const RuntimeAdapter = union(enum) {
@@ -40,9 +43,40 @@ pub const RuntimeAdapter = union(enum) {
                 .vad_min_speech_ms = config.vad_min_speech_ms,
                 .vad_min_silence_ms = config.vad_min_silence_ms,
                 .vad_speech_pad_ms = config.vad_speech_pad_ms,
+                .initial_prompt = config.initial_prompt,
             }) },
             else => error.UnsupportedRuntime,
         };
+    }
+
+    /// Replace the decoder bias prompt. Routes to the underlying adapter.
+    /// Pass `null` or empty to clear.
+    pub fn setInitialPrompt(self: *RuntimeAdapter, prompt: ?[]const u8) !void {
+        switch (self.*) {
+            inline else => |*adapter| try adapter.setInitialPrompt(prompt),
+        }
+    }
+
+    /// Override VAD parameters at runtime. Used to apply device-specific
+    /// tunings (e.g. relaxed thresholds for Bluetooth mics) at recording
+    /// start without reloading the model.
+    pub fn setVadParams(
+        self: *RuntimeAdapter,
+        enabled: bool,
+        threshold: f32,
+        min_speech_ms: i32,
+        min_silence_ms: i32,
+        speech_pad_ms: i32,
+    ) void {
+        switch (self.*) {
+            inline else => |*adapter| adapter.setVadParams(
+                enabled,
+                threshold,
+                min_speech_ms,
+                min_silence_ms,
+                speech_pad_ms,
+            ),
+        }
     }
 
     pub fn deinit(self: *RuntimeAdapter) void {

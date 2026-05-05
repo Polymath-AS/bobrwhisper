@@ -25,6 +25,10 @@ vad_threshold: f32,
 vad_min_speech_ms: i32,
 vad_min_silence_ms: i32,
 vad_speech_pad_ms: i32,
+// Decoder bias prompt. Owned, sentinel-terminated, swapped via
+// `setInitialPrompt`. Whisper.cpp accepts up to ~224 prompt tokens; callers
+// are responsible for staying under that bound (see DictionaryStore).
+initial_prompt: ?[:0]u8 = null,
 
 pub const Config = struct {
     model_path: []const u8,
@@ -38,6 +42,8 @@ pub const Config = struct {
     vad_min_speech_ms: i32 = 250,
     vad_min_silence_ms: i32 = 100,
     vad_speech_pad_ms: i32 = 30,
+    // Optional initial prompt for decoder bias.
+    initial_prompt: ?[]const u8 = null,
 };
 
 fn shouldUseGpu() bool {
@@ -84,6 +90,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
         .vad_min_speech_ms = config.vad_min_speech_ms,
         .vad_min_silence_ms = config.vad_min_silence_ms,
         .vad_speech_pad_ms = config.vad_speech_pad_ms,
+        .initial_prompt = if (config.initial_prompt) |p| try allocator.dupeZ(u8, p) else null,
     };
 }
 
@@ -96,6 +103,47 @@ pub fn deinit(self: *WhisperCppAdapter) void {
     if (self.vad_model_path) |p| {
         self.allocator.free(p);
     }
+    if (self.initial_prompt) |p| {
+        self.allocator.free(p);
+    }
+}
+
+/// Override the VAD parameters used by subsequent transcribe calls. Used
+/// by the App to push device-specific tunings (e.g. lower threshold for
+/// Bluetooth mics whose codec compression smears speech onsets). Same
+/// concurrency contract as `setInitialPrompt` — caller must not be
+/// transcribing.
+pub fn setVadParams(
+    self: *WhisperCppAdapter,
+    enabled: bool,
+    threshold: f32,
+    min_speech_ms: i32,
+    min_silence_ms: i32,
+    speech_pad_ms: i32,
+) void {
+    std.debug.assert(threshold >= 0.0 and threshold <= 1.0);
+    std.debug.assert(min_speech_ms >= 0);
+    std.debug.assert(min_silence_ms >= 0);
+    std.debug.assert(speech_pad_ms >= 0);
+    self.vad_enabled = enabled;
+    self.vad_threshold = threshold;
+    self.vad_min_speech_ms = min_speech_ms;
+    self.vad_min_silence_ms = min_silence_ms;
+    self.vad_speech_pad_ms = speech_pad_ms;
+}
+
+/// Replace the decoder bias prompt. Pass `null` (or empty) to clear. Caller
+/// must NOT hold a transcribe call concurrently — the adapter is single-
+/// threaded; App.zig drives all calls from the live-transcription thread or
+/// the synchronous transcribe path.
+pub fn setInitialPrompt(self: *WhisperCppAdapter, prompt: ?[]const u8) !void {
+    if (self.initial_prompt) |old| {
+        self.allocator.free(old);
+        self.initial_prompt = null;
+    }
+    const new_prompt = prompt orelse return;
+    if (new_prompt.len == 0) return;
+    self.initial_prompt = try self.allocator.dupeZ(u8, new_prompt);
 }
 
 /// Transcribe audio samples (16kHz, mono, f32)
@@ -120,6 +168,16 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         return error.NoAudioData;
     }
 
+    std.log.info("Transcribing {d} samples, live={}, vad_enabled={}, vad_threshold={d:.3}, min_speech_ms={d}, min_silence_ms={d}, speech_pad_ms={d}", .{
+        samples.len,
+        live,
+        self.vad_enabled,
+        self.vad_threshold,
+        self.vad_min_speech_ms,
+        self.vad_min_silence_ms,
+        self.vad_speech_pad_ms,
+    });
+
     var lang_buf: [8:0]u8 = [_:0]u8{0} ** 8;
     const lang_len = @min(language.len, lang_buf.len - 1);
     @memcpy(lang_buf[0..lang_len], language[0..lang_len]);
@@ -137,6 +195,7 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         self.vad_min_speech_ms,
         self.vad_min_silence_ms,
         self.vad_speech_pad_ms,
+        if (self.initial_prompt) |p| p.ptr else null,
     );
     if (result != 0) {
         std.log.err("whisper_full failed: {}", .{result});
