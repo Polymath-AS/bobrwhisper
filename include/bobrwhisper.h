@@ -67,16 +67,23 @@ typedef enum {
 typedef void (*bobrwhisper_status_cb)(void* userdata, bobrwhisper_status_e status);
 typedef void (*bobrwhisper_transcript_cb)(void* userdata, bobrwhisper_string_s text, bool is_final);
 typedef void (*bobrwhisper_error_cb)(void* userdata, bobrwhisper_string_s error);
+/// Non-fatal warning channel. Runtime issues that the user should know about
+/// but that do not stop work in progress (stuck microphone, suboptimal input
+/// device, ...) flow through this callback instead of `on_error`. The status
+/// is NOT changed to ERROR when a warning fires.
+typedef void (*bobrwhisper_warning_cb)(void* userdata, bobrwhisper_string_s warning);
 
 typedef struct {
     void* userdata;
     bobrwhisper_status_cb on_status_change;
     bobrwhisper_transcript_cb on_transcript;
     bobrwhisper_error_cb on_error;
+    bobrwhisper_warning_cb on_warning;
     const char* models_dir;
     const char* config_path;
     const char* llm_model_path;
     const char* vad_model_path;
+    bool whisper_mode;
 } bobrwhisper_runtime_config_s;
 
 typedef struct {
@@ -85,6 +92,7 @@ typedef struct {
     bool remove_filler_words;
     bool auto_punctuate;
     bool use_llm_formatting;
+    bool whisper_mode;
 } bobrwhisper_transcribe_options_s;
 
 typedef struct {
@@ -93,6 +101,7 @@ typedef struct {
     bool auto_punctuate;
     bool use_llm_formatting;
     const char* custom_prompt;
+    bool whisper_mode;
 } bobrwhisper_settings_s;
 
 int bobrwhisper_init(void);

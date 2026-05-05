@@ -142,6 +142,9 @@ pub const Tone = enum(c_int) {
 pub const StatusCallback = *const fn (?*anyopaque, Status) callconv(.c) void;
 pub const TranscriptCallback = *const fn (?*anyopaque, String, bool) callconv(.c) void;
 pub const ErrorCallback = *const fn (?*anyopaque, String) callconv(.c) void;
+/// Non-fatal warning channel. Used by the App for stuck-mic, Bluetooth-mic,
+/// and similar advisories that should NOT flip status to .error.
+pub const WarningCallback = *const fn (?*anyopaque, String) callconv(.c) void;
 
 pub const RuntimeConfig = extern struct {
     userdata: ?*anyopaque,
@@ -149,12 +152,14 @@ pub const RuntimeConfig = extern struct {
     on_status_change: ?StatusCallback,
     on_transcript: ?TranscriptCallback,
     on_error: ?ErrorCallback,
+    on_warning: ?WarningCallback,
 
     models_dir: ?[*:0]const u8,
     config_path: ?[*:0]const u8,
 
     llm_model_path: ?[*:0]const u8,
     vad_model_path: ?[*:0]const u8,
+    whisper_mode: bool,
 
     pub fn getModelsDir(self: RuntimeConfig) []const u8 {
         if (self.models_dir) |ptr| {
@@ -191,6 +196,7 @@ pub const Settings = extern struct {
     auto_punctuate: bool,
     use_llm_formatting: bool,
     custom_prompt: ?[*:0]const u8,
+    whisper_mode: bool,
 
     pub fn getCustomPrompt(self: Settings) ?[]const u8 {
         if (self.custom_prompt) |ptr| {
@@ -206,6 +212,7 @@ pub const TranscribeOptions = extern struct {
     remove_filler_words: bool,
     auto_punctuate: bool,
     use_llm_formatting: bool,
+    whisper_mode: bool,
 
     pub fn getLanguage(self: TranscribeOptions) []const u8 {
         if (self.language) |ptr| {

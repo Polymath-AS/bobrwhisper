@@ -101,6 +101,9 @@ fn writeApple(domain: []const u8, settings: c_api.Settings) WriteError!void {
     const key_custom_prompt = try makeCFString("customPrompt");
     defer cf.CFRelease(key_custom_prompt);
 
+    const key_whisper_mode = try makeCFString("whisperMode");
+    defer cf.CFRelease(key_whisper_mode);
+
     var tone_value: i32 = @intFromEnum(settings.tone);
     const tone_number = cf.CFNumberCreate(
         cf.kCFAllocatorDefault,
@@ -133,6 +136,12 @@ fn writeApple(domain: []const u8, settings: c_api.Settings) WriteError!void {
     } else {
         cf.CFPreferencesSetAppValue(key_custom_prompt, null, domain_cf);
     }
+
+    cf.CFPreferencesSetAppValue(
+        key_whisper_mode,
+        if (settings.whisper_mode) cf.kCFBooleanTrue.* else cf.kCFBooleanFalse.*,
+        domain_cf,
+    );
 
     const sync_ok = cf.CFPreferencesAppSynchronize(domain_cf);
     if (sync_ok == 0) {
