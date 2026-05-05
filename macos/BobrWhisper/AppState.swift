@@ -8,6 +8,12 @@ class AppState: ObservableObject {
     @Published private(set) var isRecording: Bool = false
     @Published private(set) var lastTranscript: String = ""
     @Published private(set) var errorMessage: String?
+    /// Non-fatal advisory text (stuck mic, Bluetooth mic, etc.). Cleared
+    /// automatically a few seconds after it is set so the UI doesn't have to
+    /// own dismissal logic. Lives separately from `errorMessage` so it does
+    /// not flip status to `.error`.
+    @Published private(set) var warningMessage: String?
+    private var warningClearWorkItem: DispatchWorkItem?
     @Published private(set) var isDownloading: Bool = false
     @Published var downloadProgress: Double = 0
     @Published private(set) var transcriptLog: [TranscriptLogEntry] = []
@@ -156,6 +162,21 @@ class AppState: ObservableObject {
                 appState.status = .error
             }
         }
+
+        config.on_warning = { userdata, warning in
+            guard let userdata = userdata else { return }
+            let warningMsg: String?
+            if let ptr = warning.ptr, warning.len > 0 {
+                let data = Data(bytes: ptr, count: warning.len)
+                warningMsg = String(data: data, encoding: .utf8)
+            } else {
+                warningMsg = nil
+            }
+            let appState = Unmanaged<AppState>.fromOpaque(userdata).takeUnretainedValue()
+            DispatchQueue.main.async {
+                appState.presentWarning(warningMsg)
+            }
+        }
         
         let vadModelPath = Bundle.main.path(forResource: "silero-v6.2.0", ofType: "bin")
         
@@ -201,6 +222,32 @@ class AppState: ObservableObject {
         if let ptr = modelsDirCString { free(ptr); modelsDirCString = nil }
         if let ptr = configDomainCString { free(ptr); configDomainCString = nil }
         if let ptr = vadModelPathCString { free(ptr); vadModelPathCString = nil }
+    }
+
+    /// Display a non-fatal advisory and auto-clear it after a short delay so
+    /// the UI doesn't have to track dismissal. Re-firing while a warning is
+    /// already on screen restarts the timer with the new text.
+    func presentWarning(_ message: String?) {
+        warningClearWorkItem?.cancel()
+        warningMessage = message
+        guard message != nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.warningMessage = nil
+            self.warningClearWorkItem = nil
+        }
+        warningClearWorkItem = work
+        // 4.5 s sits between "long enough to read" and "out of the way before
+        // the next utterance lands". Matches the auto-dismiss feel of a
+        // short-lived toast.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5, execute: work)
+    }
+
+    /// Manually dismiss the warning (used when the user taps the toast).
+    func dismissWarning() {
+        warningClearWorkItem?.cancel()
+        warningClearWorkItem = nil
+        warningMessage = nil
     }
 
     private func persistSettings() {
@@ -415,7 +462,14 @@ class AppState: ObservableObject {
     
     func pasteToActiveApp() {
         copyToClipboard()
-        
+
+        // Auto-paste is opt-out via Settings, but ALSO requires Accessibility
+        // permission. If either is missing we still copy (above) so the user
+        // can paste manually — silent no-op otherwise would surprise users who
+        // skipped Accessibility during onboarding.
+        let autoPasteEnabled = (UserDefaults.standard.object(forKey: "autoPaste") as? Bool) ?? true
+        guard autoPasteEnabled, AXIsProcessTrusted() else { return }
+
         // Simulate Cmd+V
         let source = CGEventSource(stateID: .hidSystemState)
         let vKeyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)

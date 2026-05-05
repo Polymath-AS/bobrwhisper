@@ -19,17 +19,26 @@ struct NotchOverlayView: View {
         !appState.lastTranscript.isEmpty && appState.status != .ready
     }
 
+    private var hasWarning: Bool {
+        appState.warningMessage != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            warningBanner
             compactBar
             separator
             transcriptText
         }
-        .frame(width: isExpanded ? 300 : 180, alignment: .leading)
+        .frame(width: isExpanded ? 320 : (hasWarning ? 280 : 180), alignment: .leading)
         .background(pillBackground)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onTapGesture {
+            if hasWarning {
+                appState.dismissWarning()
+                return
+            }
             if appState.isRecording {
                 onStopRecording()
             } else if appState.status == .ready {
@@ -72,6 +81,37 @@ struct NotchOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4), value: isExpanded)
         .animation(.timingCurve(0.65, 0, 0.35, 1, duration: 0.4), value: showTranscript)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasWarning)
+    }
+
+    // MARK: - Warning Banner
+
+    /// Transient yellow strip at the top of the pill carrying non-fatal
+    /// advisories (stuck mic, Bluetooth mic, ...). Auto-dismisses via
+    /// `AppState.presentWarning`; tapping the pill while a warning is up
+    /// dismisses it immediately. Animation matches the rest of the pill.
+    @ViewBuilder
+    private var warningBanner: some View {
+        if let message = appState.warningMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.yellow)
+
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.yellow.opacity(0.18))
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     // MARK: - Compact Bar

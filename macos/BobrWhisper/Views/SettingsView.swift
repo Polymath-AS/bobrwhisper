@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var permissions: PermissionsCoordinator
     
     var body: some View {
         TabView {
@@ -10,6 +11,7 @@ struct SettingsView: View {
                     Label("General", systemImage: "gear")
                 }
                 .environmentObject(appState)
+                .environmentObject(permissions)
             
             ModelsSettingsView()
                 .tabItem {
@@ -22,24 +24,118 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 500, height: 350)
+        .frame(width: 500, height: 420)
+    }
+}
+
+/// Inline permission row used in the General settings tab. Mirrors the pill
+/// styling of `MainWindowView.statusPill` so settings feels visually
+/// consistent with the dashboard.
+struct PermissionStatusRow: View {
+    let title: String
+    let subtitle: String
+    let state: PermissionState
+    let mandatory: Bool
+    let onAction: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                    statusPill
+                }
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if state != .granted {
+                Button(actionLabel, action: onAction)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusPill: some View {
+        let (label, color): (String, Color) = {
+            switch state {
+            case .granted: return ("Granted", .green)
+            case .denied: return (mandatory ? "Required" : "Not granted", mandatory ? .orange : .yellow)
+            case .notDetermined: return ("Not requested", .yellow)
+            }
+        }()
+
+        return Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.14))
+            .overlay(Capsule().stroke(color.opacity(0.35), lineWidth: 0.5))
+            .clipShape(Capsule())
+    }
+
+    private var actionLabel: String {
+        switch state {
+        case .granted: return "Granted"
+        case .notDetermined: return "Grant"
+        case .denied: return "Open Settings"
+        }
     }
 }
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var permissions: PermissionsCoordinator
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoPaste") private var autoPaste = true
     @AppStorage("hotkeyCombo") private var hotkeyCombo = "option+space"
     
     var body: some View {
         Form {
+            Section("Permissions") {
+                PermissionStatusRow(
+                    title: "Microphone",
+                    subtitle: "Required for recording.",
+                    state: permissions.microphone,
+                    mandatory: true,
+                    onAction: {
+                        switch permissions.microphone {
+                        case .notDetermined: permissions.requestMicrophone { _ in }
+                        case .denied: permissions.openMicrophoneSettings()
+                        case .granted: break
+                        }
+                    }
+                )
+
+                PermissionStatusRow(
+                    title: "Accessibility",
+                    subtitle: "Required for auto-paste only.",
+                    state: permissions.accessibility,
+                    mandatory: false,
+                    onAction: { permissions.openAccessibilitySettings() }
+                )
+
+                Button("Re-run Onboarding...") {
+                    (NSApp.delegate as? AppDelegate)?.relaunchOnboarding()
+                }
+            }
+
             Section("Startup") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
             }
             
             Section("Behavior") {
                 Toggle("Auto-paste after transcription", isOn: $autoPaste)
+                    .disabled(!permissions.accessibilityGranted)
+                if !permissions.accessibilityGranted {
+                    Text("Auto-paste needs Accessibility permission.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 
                 Picker("Tone", selection: $appState.tone) {
                     ForEach(Tone.allCases) { tone in
@@ -70,7 +166,13 @@ struct GeneralSettingsView: View {
 struct ModelsSettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("defaultModel") private var defaultModelKey: String = ""
-    
+
+    /// Per-group variant override. Lets the user pick "English" on the Tiny
+    /// row without that choice leaking into other size groups. Keyed by the
+    /// group id (id with `.en` stripped). Empty until the user opens a
+    /// dropdown, at which point we remember their choice for the session.
+    @State private var groupSelections: [String: String] = [:]
+
     private var defaultModelID: String {
         resolveLegacyStoredModelID(defaultModelKey)
     }
@@ -89,39 +191,8 @@ struct ModelsSettingsView: View {
     var body: some View {
         Form {
             Section("Speech Models") {
-                ForEach(appState.availableModels) { model in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(model.displayName)
-                            Text(modelStatus(model))
-                                .font(.caption)
-                                .foregroundColor(appState.modelExists(model) ? .green : .secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        if appState.modelExists(model) {
-                            if appState.selectedModelID == model.id && appState.isModelLoaded {
-                                Button("Loaded") {}
-                                    .disabled(true)
-                                    .buttonStyle(.borderedProminent)
-                            } else {
-                                Button("Load") {
-                                    appState.selectedModelID = model.id
-                                    appState.loadModel()
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        } else {
-                            Button("Download") {
-                                appState.selectedModelID = model.id
-                                appState.downloadModel(model)
-                            }
-                            .disabled(appState.isDownloading)
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding(.vertical, 2)
+                ForEach(modelGroups) { group in
+                    modelRow(group: group)
                 }
                 
                 if appState.isDownloading {
@@ -155,6 +226,127 @@ struct ModelsSettingsView: View {
         .formStyle(.grouped)
         .padding()
     }
+
+    // MARK: - Grouped row rendering
+
+    /// Group key = the model id with any trailing `.en` removed. The
+    /// multilingual variant is always listed first so the picker defaults to
+    /// "Multilingual" before the user touches it.
+    private var modelGroups: [ModelSizeGroup] {
+        var keyed: [String: [SpeechModelDescriptor]] = [:]
+        var order: [String] = []
+        for model in appState.availableModels {
+            let key = groupKey(for: model)
+            if keyed[key] == nil { order.append(key) }
+            keyed[key, default: []].append(model)
+        }
+        return order.compactMap { key in
+            guard var variants = keyed[key], !variants.isEmpty else { return nil }
+            // Multilingual (no .en) before English-only.
+            variants.sort { lhs, rhs in
+                !lhs.isEnglishOnly && rhs.isEnglishOnly
+            }
+            // Strip the disambiguating " English" word so the row shows the
+            // common base name. The size annotation in parens stays.
+            let baseName = variants[0].displayName
+                .replacingOccurrences(of: " English", with: "")
+            return ModelSizeGroup(id: key, baseDisplayName: baseName, variants: variants)
+        }
+    }
+
+    private func groupKey(for model: SpeechModelDescriptor) -> String {
+        model.isEnglishOnly ? String(model.id.dropLast(3)) : model.id
+    }
+
+    /// The variant currently shown for this row. Resolution order:
+    /// 1. explicit user choice in this session
+    /// 2. the globally-selected model, if it belongs to this group
+    /// 3. the persisted default model, if it belongs to this group
+    /// 4. multilingual fallback (first entry)
+    private func currentVariant(for group: ModelSizeGroup) -> SpeechModelDescriptor {
+        if let chosen = groupSelections[group.id],
+           let v = group.variants.first(where: { $0.id == chosen }) {
+            return v
+        }
+        if let v = group.variants.first(where: { $0.id == appState.selectedModelID }) {
+            return v
+        }
+        if let v = group.variants.first(where: { $0.id == defaultModelID }) {
+            return v
+        }
+        return group.variants[0]
+    }
+
+    private func variantBinding(for group: ModelSizeGroup) -> Binding<String> {
+        Binding(
+            get: { currentVariant(for: group).id },
+            set: { groupSelections[group.id] = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private func modelRow(group: ModelSizeGroup) -> some View {
+        let current = currentVariant(for: group)
+
+        HStack {
+            VStack(alignment: .leading) {
+                Text(group.baseDisplayName)
+                Text(modelStatus(current))
+                    .font(.caption)
+                    .foregroundColor(appState.modelExists(current) ? .green : .secondary)
+            }
+
+            Spacer()
+
+            if group.variants.count > 1 {
+                Picker("", selection: variantBinding(for: group)) {
+                    ForEach(group.variants) { variant in
+                        Text(variant.isEnglishOnly ? "English" : "Multilingual")
+                            .tag(variant.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 130)
+            }
+
+            if appState.modelExists(current) {
+                if appState.selectedModelID == current.id && appState.isModelLoaded {
+                    Button("Loaded") {}
+                        .disabled(true)
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Button("Load") {
+                        appState.selectedModelID = current.id
+                        appState.loadModel()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Button("Download") {
+                    appState.selectedModelID = current.id
+                    appState.downloadModel(current)
+                }
+                .disabled(appState.isDownloading)
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// One row in the Models settings list. May represent a single multilingual
+/// model OR a (multilingual, English-only) pair selectable via a dropdown.
+private struct ModelSizeGroup: Identifiable {
+    let id: String
+    let baseDisplayName: String
+    let variants: [SpeechModelDescriptor]
+}
+
+extension SpeechModelDescriptor {
+    /// True for models trained on English audio only (`.en` suffix in the id).
+    /// These can transcribe but cannot do language detection or translation.
+    var isEnglishOnly: Bool { id.hasSuffix(".en") }
 }
 
 struct AboutView: View {
@@ -212,4 +404,5 @@ struct FeatureRow: View {
 #Preview {
     SettingsView()
         .environmentObject(AppState())
+        .environmentObject(PermissionsCoordinator())
 }

@@ -5,6 +5,7 @@ import BobrWhisperKit
 
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let appState = AppState()
+    let permissions = PermissionsCoordinator()
     private var hotkeyMonitor: Any?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -20,9 +21,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         
         // Register global hotkey (Fn key or custom)
         setupHotkey()
-        
-        // Request accessibility permissions if needed
-        requestAccessibilityPermissions()
+
+        // Onboarding lives inside the dashboard window now. If permissions
+        // need attention on launch, flip the coordinator into onboarding mode
+        // and ask SwiftUI to open the dashboard so the user actually sees it.
+        if permissions.shouldAutoShowOnLaunch {
+            permissions.beginOnboarding()
+            DispatchQueue.main.async { [weak self] in
+                self?.openDashboardWindow()
+            }
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -99,12 +107,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
     
-    private func requestAccessibilityPermissions() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let trusted = AXIsProcessTrustedWithOptions(options)
-        
-        if !trusted {
-            print("Accessibility permissions required for global hotkey")
+    /// Open (or focus) the dashboard `WindowGroup`. Used on launch when
+    /// onboarding needs to run, and from the menubar's "Open Dashboard" entry.
+    /// Walks the existing window list first to focus an already-open dashboard
+    /// instead of leaning on SwiftUI to create a duplicate.
+    func openDashboardWindow() {
+        permissions.refresh()
+        NSApp.activate(ignoringOtherApps: true)
+
+        for window in NSApplication.shared.windows
+        where window.identifier?.rawValue == "dashboard" {
+            window.makeKeyAndOrderFront(nil)
+            return
         }
+
+        // SwiftUI registers the WindowGroup with id "dashboard" via a
+        // discoverable URL handler under the hood. The standard
+        // `NSWorkspace.OpenConfiguration` route does not work for in-process
+        // scenes, so post a notification that the SwiftUI commands listener
+        // (in `App.swift`) acts on.
+        NotificationCenter.default.post(
+            name: .bobrWhisperOpenDashboard,
+            object: nil
+        )
     }
+
+    /// Reset the "I've completed onboarding" flag and re-show the dashboard
+    /// in onboarding mode. Bound to the menubar / settings re-run actions.
+    func relaunchOnboarding() {
+        permissions.resetOnboarding()
+        permissions.beginOnboarding()
+        openDashboardWindow()
+    }
+}
+
+extension Notification.Name {
+    /// Posted by `AppDelegate.openDashboardWindow` when a SwiftUI surface needs
+    /// to call `openWindow(id: "dashboard")` on its behalf. Subscribed to from
+    /// the App scene, which is the only place with access to the
+    /// `\.openWindow` environment.
+    static let bobrWhisperOpenDashboard = Notification.Name("bobrWhisperOpenDashboard")
 }

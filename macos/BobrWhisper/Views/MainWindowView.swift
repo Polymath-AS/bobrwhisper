@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainWindowView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var permissions: PermissionsCoordinator
     @Environment(\.openSettings) private var openSettings
 
     private static let timeFormatter: DateFormatter = {
@@ -12,6 +13,56 @@ struct MainWindowView: View {
     }()
 
     var body: some View {
+        Group {
+            if permissions.isOnboardingActive {
+                // Onboarding sits in front of the dashboard until the user
+                // either grants the mandatory mic permission or quits. Same
+                // window chrome — feels like a step in the app, not a popup.
+                OnboardingView()
+            } else {
+                dashboardBody
+            }
+        }
+        .navigationTitle("BobrWhisper")
+        .frame(minWidth: 940, minHeight: 620)
+        .toolbar {
+            if !permissions.isOnboardingActive {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
+                        if appState.isRecording {
+                            appState.stopRecording()
+                        } else {
+                            appState.startRecording()
+                        }
+                    }
+
+                    Button("Copy Latest") {
+                        appState.copyToClipboard()
+                    }
+                    .disabled(appState.transcriptLog.isEmpty)
+
+                    Button("Clear Log") {
+                        appState.clearTranscriptLog()
+                    }
+                    .disabled(appState.transcriptLog.isEmpty)
+
+                    Button("Settings") {
+                        openSettings()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // If the dashboard is opened while permissions are still missing
+            // (e.g. user revoked mic mid-session), drop straight back into
+            // onboarding instead of showing a broken table.
+            if permissions.shouldAutoShowOnLaunch {
+                permissions.beginOnboarding()
+            }
+        }
+    }
+
+    private var dashboardBody: some View {
         VStack(spacing: 0) {
             dashboardHeader
 
@@ -34,33 +85,6 @@ struct MainWindowView: View {
                     }
                 }
                 .background(Color(nsColor: .textBackgroundColor))
-            }
-        }
-        .navigationTitle("BobrWhisper")
-        .frame(minWidth: 940, minHeight: 620)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
-                    if appState.isRecording {
-                        appState.stopRecording()
-                    } else {
-                        appState.startRecording()
-                    }
-                }
-
-                Button("Copy Latest") {
-                    appState.copyToClipboard()
-                }
-                .disabled(appState.transcriptLog.isEmpty)
-
-                Button("Clear Log") {
-                    appState.clearTranscriptLog()
-                }
-                .disabled(appState.transcriptLog.isEmpty)
-
-                Button("Settings") {
-                    openSettings()
-                }
             }
         }
     }
@@ -186,4 +210,5 @@ struct MainWindowView: View {
 #Preview {
     MainWindowView()
         .environmentObject(AppState())
+        .environmentObject(PermissionsCoordinator())
 }
