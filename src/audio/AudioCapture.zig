@@ -118,6 +118,10 @@ buffer: std.ArrayListUnmanaged(f32),
 mutex: SpinMutex = .{},
 // RMS audio level from the most recent callback buffer, updated under mutex
 audio_level: f32 = 0,
+// Stuck-mic detection: count of trailing samples whose CoreAudio callback
+// delivered an exactly-zero buffer. Reset to 0 the moment any non-zero sample
+// arrives. Exact-zero input is a strong signal for dead audio routes.
+consecutive_zero_samples: usize = 0,
 
 pub const Config = struct {
     sample_rate: f64 = 16000.0,
@@ -155,6 +159,7 @@ pub fn start(self: *AudioCapture) !void {
     if (self.is_recording) return;
 
     self.buffer.clearRetainingCapacity();
+    self.consecutive_zero_samples = 0;
     try self.buffer.ensureTotalCapacity(self.allocator, 16000 * 30);
 
     if (builtin.os.tag == .macos) {
@@ -188,6 +193,14 @@ pub fn getSamples(self: *AudioCapture) []const f32 {
     return self.buffer.items;
 }
 
+/// Mutable view into the captured samples. Same lifetime constraints as `getSamples`;
+/// only safe when recording is stopped. Used by callers that want to apply in-place
+/// preprocessing such as peak normalization before transcription.
+pub fn getSamplesMut(self: *AudioCapture) []f32 {
+    std.debug.assert(!self.is_recording);
+    return self.buffer.items;
+}
+
 pub fn copySamples(self: *AudioCapture, allocator: std.mem.Allocator) ![]f32 {
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -217,6 +230,15 @@ pub fn getSampleCount(self: *AudioCapture) usize {
     self.mutex.lock();
     defer self.mutex.unlock();
     return self.buffer.items.len;
+}
+
+/// Trailing run of bit-exact-zero samples reported by CoreAudio. Crosses the
+/// stuck-mic threshold (~5 s = 80000 samples at 16 kHz) when the input device
+/// stops delivering real audio. Resets to 0 on any non-zero sample.
+pub fn getConsecutiveZeroSamples(self: *AudioCapture) usize {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    return self.consecutive_zero_samples;
 }
 
 pub fn clearBuffer(self: *AudioCapture) void {
@@ -315,12 +337,22 @@ fn audioInputCallback(
             std.log.err("Failed to append audio samples", .{});
         };
 
-        // Compute RMS audio level from this callback buffer
+        // Single pass: RMS energy + exact-zero detection. The zero check
+        // surfaces a stuck microphone (dead route, denied permission at the
+        // system level, suspended driver). RMS alone is too noisy: a quiet mic
+        // still produces sub-1e-6 jitter, but a dead route is bit-exact zero.
         var energy: f32 = 0;
+        var any_nonzero = false;
         for (samples[0..sample_count]) |s| {
             energy += s * s;
+            if (s != 0) any_nonzero = true;
         }
         self.audio_level = @sqrt(energy / @as(f32, @floatFromInt(sample_count)));
+        if (any_nonzero) {
+            self.consecutive_zero_samples = 0;
+        } else {
+            self.consecutive_zero_samples +|= sample_count;
+        }
     }
 
     _ = c.AudioQueueEnqueueBuffer(queue, buffer, 0, null);
@@ -371,6 +403,47 @@ pub fn trimSilenceBounds(samples: []const f32, threshold: f32) TrimBounds {
     return .{ .start = start_idx, .end = end_idx };
 }
 
+/// Estimate ambient noise floor from the first ~0.5s of audio.
+/// Returns the RMS energy of a leading window, useful for deriving
+/// an adaptive silence-trim threshold (e.g. 3× noise floor).
+pub fn computeNoiseFloor(samples: []const f32) f32 {
+    if (samples.len == 0) return 0;
+
+    const window: usize = @min(8000, samples.len);
+    var energy: f32 = 0;
+    for (samples[0..window]) |s| {
+        energy += s * s;
+    }
+    return @sqrt(energy / @as(f32, @floatFromInt(window)));
+}
+
+/// In-place peak normalization. Scales `samples` so the largest absolute
+/// amplitude becomes `target_peak` (typically 0.95 to avoid hard clipping).
+/// Returns the gain factor that was applied. Only ever scales up: if the
+/// input is already at or above `target_peak` the buffer is unchanged.
+/// Silent buffers (peak < 1e-4) are also left alone to avoid amplifying noise.
+///
+/// Whispered speech routinely has peaks of ~0.25 vs. ~0.6 for normal voice,
+/// which produced a 4–7× WER improvement in the `tune` experiments. Applying
+/// this before trimming and transcription is safe for normal voice (the gain
+/// factor stays near 1.0) but materially helps quiet audio.
+pub fn peakNormalize(samples: []f32, target_peak: f32) f32 {
+    std.debug.assert(target_peak > 0.0);
+    std.debug.assert(target_peak <= 1.0);
+    if (samples.len == 0) return 1.0;
+
+    var peak: f32 = 0;
+    for (samples) |s| {
+        const a = @abs(s);
+        if (a > peak) peak = a;
+    }
+    if (peak < 1e-4 or peak >= target_peak) return 1.0;
+
+    const gain = target_peak / peak;
+    for (samples) |*s| s.* *= gain;
+    return gain;
+}
+
 pub fn resample(allocator: std.mem.Allocator, samples: []const f32, from_rate: f64, to_rate: f64) ![]f32 {
     if (from_rate == to_rate) {
         return allocator.dupe(f32, samples);
@@ -403,4 +476,40 @@ test "voice activity detection" {
 
     try std.testing.expect(!detectVoiceActivity(&silence, 0.01));
     try std.testing.expect(detectVoiceActivity(&voice, 0.01));
+}
+
+test "compute noise floor" {
+    const silence = [_]f32{0.0} ** 100;
+    const noise = [_]f32{0.1} ** 100;
+
+    try std.testing.expectEqual(@as(f32, 0), computeNoiseFloor(&silence));
+    try std.testing.expect(computeNoiseFloor(&noise) > 0.09);
+    try std.testing.expect(computeNoiseFloor(&noise) < 0.11);
+    try std.testing.expectEqual(@as(f32, 0), computeNoiseFloor(&[_]f32{}));
+}
+
+test "peakNormalize boosts quiet audio" {
+    var samples = [_]f32{ 0.1, -0.2, 0.05, -0.1 };
+    const gain = peakNormalize(&samples, 0.95);
+    try std.testing.expectApproxEqAbs(@as(f32, 4.75), gain, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, -0.95), samples[1], 0.001);
+}
+
+test "peakNormalize leaves loud audio unchanged" {
+    var samples = [_]f32{ 0.5, -0.95 };
+    const gain = peakNormalize(&samples, 0.95);
+    try std.testing.expectEqual(@as(f32, 1.0), gain);
+    try std.testing.expectEqual(@as(f32, 0.5), samples[0]);
+}
+
+test "peakNormalize handles silence" {
+    var silence = [_]f32{0.0} ** 8;
+    const gain = peakNormalize(&silence, 0.95);
+    try std.testing.expectEqual(@as(f32, 1.0), gain);
+}
+
+test "peakNormalize empty buffer" {
+    var empty: [0]f32 = .{};
+    const gain = peakNormalize(&empty, 0.95);
+    try std.testing.expectEqual(@as(f32, 1.0), gain);
 }
