@@ -5,6 +5,8 @@ const compat = @import("compat.zig");
 const builtin = @import("builtin");
 const asr = @import("asr");
 const AudioCapture = @import("audio/AudioCapture.zig");
+const snippet = @import("snippet.zig");
+const tune = @import("tune.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
@@ -223,12 +225,18 @@ pub fn main(init: std.process.Init) !void {
         try transcribeRawCommand(allocator, args[2..]);
     } else if (std.mem.eql(u8, command, "record")) {
         try recordCommand(allocator, args[2..]);
+    } else if (std.mem.eql(u8, command, "snippet")) {
+        try snippet.run(allocator, args[2..]);
+    } else if (std.mem.eql(u8, command, "tune")) {
+        try tune.run(allocator, args[2..]);
     } else if (std.mem.eql(u8, command, "live")) {
         try liveCommand(allocator, args[2..]);
     } else if (std.mem.eql(u8, command, "models")) {
         try modelsCommand(allocator);
     } else if (std.mem.eql(u8, command, "languages")) {
         languagesCommand();
+    } else if (std.mem.eql(u8, command, "test-whisper")) {
+        try testWhisperCommand(allocator, args[2..]);
     } else if (std.mem.eql(u8, command, "help")) {
         printUsage();
     } else {
@@ -248,6 +256,9 @@ fn printUsage() void {
         \\  transcribe <model> <audio.wav>  Transcribe a WAV file
         \\  transcribe-raw <model> <file>   Transcribe raw f32 audio
         \\  record <duration_secs>          Record audio from microphone
+        \\  snippet [options]               Record a labeled snippet for the test corpus (no transcription)
+        \\  tune [options]                  Run snippets through VAD presets, report WER vs. ground truth
+        \\  test-whisper [model] [--whisper-mode]  Record until 'q', then transcribe (debug)
         \\  models                          List available models
         \\  languages                       List supported languages
         \\  help                            Show this help
@@ -538,6 +549,115 @@ fn liveCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
 
         last_end = result.total;
+    }
+}
+
+fn testWhisperCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var selected_model: WhisperModel = .small;
+    var whisper_mode = false;
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--whisper-mode")) {
+            whisper_mode = true;
+        } else if (!std.mem.startsWith(u8, arg, "-")) {
+            selected_model = WhisperModel.fromString(arg) orelse {
+                std.debug.print("Unknown model: {s}\n", .{arg});
+                std.debug.print("Available: tiny, base, small, medium, large, large_turbo\n", .{});
+                return;
+            };
+        }
+    }
+
+    std.debug.print("test-whisper: model={s}, whisper_mode={}\n", .{ @tagName(selected_model), whisper_mode });
+
+    const model_path = selected_model.ensureDownloaded(allocator) catch |err| {
+        std.debug.print("Failed to get model: {}\n", .{err});
+        return;
+    };
+    defer allocator.free(model_path);
+
+    const vad_path = getVadModelPath(allocator);
+    defer if (vad_path) |p| allocator.free(p);
+
+    std.debug.print("Loading model: {s}\n", .{model_path});
+    if (vad_path != null) std.debug.print("VAD: enabled\n", .{});
+
+    var transcriber = WhisperCppAdapter.init(allocator, .{
+        .model_path = model_path,
+        .language = "en",
+        .n_threads = 4,
+        .vad_enabled = vad_path != null,
+        .vad_model_path = vad_path,
+        .vad_threshold = if (whisper_mode) 0.3 else 0.5,
+        .vad_min_speech_ms = if (whisper_mode) 150 else 250,
+        .vad_min_silence_ms = if (whisper_mode) 200 else 100,
+        .vad_speech_pad_ms = if (whisper_mode) 100 else 30,
+    }) catch |err| {
+        std.debug.print("Failed to load model: {}\n", .{err});
+        return;
+    };
+    defer transcriber.deinit();
+
+    std.debug.print("Model loaded. Starting recording...\n", .{});
+    std.debug.print("Press 'q' then Enter to stop and transcribe.\n\n", .{});
+
+    var audio = try AudioCapture.init(allocator);
+    defer audio.deinit();
+
+    try audio.start();
+    try snippet.recordUntilQ(&audio);
+
+    std.debug.print("\n\nStopping recording...\n", .{});
+    audio.stop();
+
+    const samples = audio.getSamples();
+    const duration_s = @as(f64, @floatFromInt(samples.len)) / 16000.0;
+    std.debug.print("Recorded {d} samples ({d:.2}s)\n", .{ samples.len, duration_s });
+
+    if (samples.len == 0) {
+        std.debug.print("No audio recorded.\n", .{});
+        return;
+    }
+
+    // Compute and log noise floor + trim info
+    const noise_floor = AudioCapture.computeNoiseFloor(samples);
+    const trim_threshold = @max(noise_floor * 3.0, 0.0005);
+    std.debug.print("\nDiagnostics:\n", .{});
+    std.debug.print("  noise floor (RMS of first 0.5s): {d:.6}\n", .{noise_floor});
+    std.debug.print("  trim threshold (3x floor, min 0.0005): {d:.6}\n", .{trim_threshold});
+    std.debug.print("  whisper_mode: {}\n", .{whisper_mode});
+
+    const bounds = AudioCapture.trimSilenceBounds(samples, trim_threshold);
+    const trimmed = samples[bounds.start..bounds.end];
+    const trimmed_pct = @as(f32, @floatFromInt(samples.len - trimmed.len)) / @as(f32, @floatFromInt(samples.len)) * 100.0;
+    std.debug.print("  trim bounds: [{d}..{d}] of {d} ({d:.1}% trimmed)\n", .{ bounds.start, bounds.end, samples.len, trimmed_pct });
+
+    const segment = if (trimmed.len > 0) trimmed else samples;
+    std.debug.print("  transcribing {d} samples ({d:.2}s)\n\n", .{
+        segment.len,
+        @as(f64, @floatFromInt(segment.len)) / 16000.0,
+    });
+
+    // Also save raw audio for replay
+    const output_path = "test-whisper.raw";
+    const file = try std.Io.Dir.cwd().createFile(compat.io(), output_path, .{});
+    defer file.close(compat.io());
+    try file.writeStreamingAll(compat.io(), std.mem.sliceAsBytes(samples));
+    std.debug.print("Raw audio saved to: {s} (replay with: bobrwhisper-cli transcribe-raw <model> {s})\n\n", .{ output_path, output_path });
+
+    // Transcribe
+    std.debug.print("Transcribing...\n", .{});
+    const text = transcriber.transcribe(segment) catch |err| {
+        std.debug.print("Transcription failed: {}\n", .{err});
+        return;
+    };
+    defer allocator.free(text);
+
+    const result = std.mem.trim(u8, text, " \t\n");
+    std.debug.print("\n--- Transcription ---\n{s}\n", .{result});
+
+    if (result.len == 0) {
+        std.debug.print("\n(empty result - whisper returned nothing)\n", .{});
     }
 }
 
