@@ -52,6 +52,9 @@ pub fn init(
                     "ARCHS=arm64",
                 })
         else
+            // Ad-hoc self-signing for local dev (no Apple Developer Team).
+            // Keeps a stable signature so TCC permissions (microphone) persist
+            // across rebuilds, while not requiring a paid signing identity.
             b.addSystemCommand(&.{
                 "xcodebuild",
                 "-project",
@@ -60,6 +63,11 @@ pub fn init(
                 "BobrWhisper",
                 "-configuration",
                 configuration,
+                "CODE_SIGN_STYLE=Manual",
+                "CODE_SIGN_IDENTITY=-",
+                "CODE_SIGNING_REQUIRED=YES",
+                "CODE_SIGNING_ALLOWED=YES",
+                "DEVELOPMENT_TEAM=",
                 "build",
                 "ARCHS=arm64",
             }),
