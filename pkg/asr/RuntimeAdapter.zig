@@ -13,9 +13,9 @@ pub const LoadConfig = struct {
     vad_enabled: bool = true,
     vad_model_path: ?[]const u8 = null,
     vad_threshold: f32 = 0.5,
-    vad_min_speech_ms: i32 = 250,
+    vad_min_speech_ms: i32 = 100,
     vad_min_silence_ms: i32 = 100,
-    vad_speech_pad_ms: i32 = 30,
+    vad_speech_pad_ms: i32 = 150,
     /// Optional decoder bias prompt (proper nouns, vocabulary). Whisper caps
     /// this at ~224 tokens. Caller is responsible for staying under the bound.
     initial_prompt: ?[]const u8 = null,

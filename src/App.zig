@@ -28,23 +28,26 @@ const VadTuning = struct {
 
 const default_vad_tuning: VadTuning = .{
     .threshold = 0.5,
-    .min_speech_ms = 250,
+    // A word such as "I", "yes", or "no" can be comfortably shorter than
+    // Silero's 250 ms default. Requiring that much speech drops the whole
+    // utterance before Whisper gets a chance to decode it.
+    .min_speech_ms = 100,
     .min_silence_ms = 100,
-    .speech_pad_ms = 30,
+    .speech_pad_ms = 150,
 };
 
 const whisper_vad_tuning: VadTuning = .{
     .threshold = 0.3,
-    .min_speech_ms = 150,
+    .min_speech_ms = 100,
     .min_silence_ms = 200,
-    .speech_pad_ms = 100,
+    .speech_pad_ms = 150,
 };
 
 const bluetooth_vad_tuning: VadTuning = .{
     .threshold = 0.25,
-    .min_speech_ms = 150,
+    .min_speech_ms = 100,
     .min_silence_ms = 300,
-    .speech_pad_ms = 100,
+    .speech_pad_ms = 150,
 };
 
 const PreparedSegment = struct {

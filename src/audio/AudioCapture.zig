@@ -545,8 +545,14 @@ pub fn trimSilenceBounds(samples: []const f32, threshold: f32) TrimBounds {
         end_idx -= window_size / 2;
     }
 
-    // Keep 0.5s of trailing context so whisper can finalize the last token
+    // Keep context on both sides of the detected speech. In particular, do
+    // not cut exactly at the first active window: plosives and very short
+    // words can begin below the energy threshold, and losing that onset can
+    // turn "I"/"a" into an empty transcript. The trailing context lets
+    // Whisper finalize the last token.
+    const head_padding: usize = 3200; // 0.2 s at 16 kHz
     const tail_padding: usize = 8000;
+    start_idx -|= head_padding;
     end_idx = @min(samples.len, end_idx + tail_padding);
 
     return .{ .start = start_idx, .end = end_idx };
@@ -625,6 +631,19 @@ test "voice activity detection" {
 
     try std.testing.expect(!detectVoiceActivity(&silence, 0.01));
     try std.testing.expect(detectVoiceActivity(&voice, 0.01));
+}
+
+test "silence trimming preserves leading context for short speech" {
+    var samples = [_]f32{0.0} ** 8000;
+    @memset(samples[4000..4160], 0.5); // A single 10 ms active window.
+
+    const bounds = trimSilenceBounds(&samples, 0.01);
+
+    // Detection overlaps the active window at sample 3920. The 0.2 s head
+    // padding must retain the quieter onset/context before it.
+    try std.testing.expect(bounds.start <= 720);
+    try std.testing.expect(bounds.start < 4000);
+    try std.testing.expect(bounds.end > 4160);
 }
 
 test "compute noise floor" {
