@@ -14,8 +14,9 @@ pub fn build(
     llama: llama_build.LlamaLib,
 ) !WhisperLib {
     const whisper_dep = b.dependency("whisper", .{});
+    const is_darwin = target.result.os.tag.isDarwin();
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
-    const has_metal = target.result.os.tag.isDarwin() and !is_ios_simulator;
+    const has_metal = is_darwin and !is_ios_simulator;
 
     const whisper_lib = b.addLibrary(.{
         .name = "whisper",
@@ -62,7 +63,9 @@ pub fn build(
         .flags = flags.items,
     });
 
-    whisper_lib.root_module.linkLibrary(llama.lib);
+    if (!is_darwin) {
+        whisper_lib.root_module.linkLibrary(llama.lib);
+    }
 
     if (target.result.os.tag.isDarwin()) {
         try AppleSdk.addPaths(b, whisper_lib);
@@ -75,6 +78,10 @@ pub fn build(
 }
 
 pub fn link(compile: *std.Build.Step.Compile, whisper: WhisperLib) void {
-    compile.root_module.linkLibrary(whisper.lib);
+    if (compile.rootModuleTarget().os.tag.isDarwin()) {
+        compile.root_module.addObjectFile(whisper.lib.getEmittedBin());
+    } else {
+        compile.root_module.linkLibrary(whisper.lib);
+    }
     compile.root_module.addIncludePath(whisper.include_path);
 }

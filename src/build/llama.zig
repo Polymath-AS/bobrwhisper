@@ -14,6 +14,7 @@ pub fn build(
     optimize: std.builtin.OptimizeMode,
 ) !LlamaLib {
     const llama_dep = b.dependency("llama", .{});
+    const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
 
     // ggml
     const ggml = b.addLibrary(.{
@@ -29,7 +30,6 @@ pub fn build(
     ggml.root_module.addIncludePath(llama_dep.path("ggml/include"));
     ggml.root_module.addIncludePath(llama_dep.path("ggml/src"));
 
-    const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
     const has_metal = is_darwin and !is_ios_simulator;
 
@@ -49,6 +49,7 @@ pub fn build(
         "-DGGML_COMMIT=\"unknown\"",
         "-DGGML_USE_CPU",
     } else &.{
+        "-D_GNU_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
         "-DGGML_COMMIT=\"unknown\"",
@@ -85,6 +86,7 @@ pub fn build(
         "-DGGML_USE_CPU",
     } else &.{
         "-std=c++17",
+        "-D_GNU_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
         "-DGGML_COMMIT=\"unknown\"",
@@ -308,7 +310,9 @@ pub fn build(
         .flags = llama_flags,
     });
 
-    llama_lib.root_module.linkLibrary(ggml);
+    if (!is_darwin) {
+        llama_lib.root_module.linkLibrary(ggml);
+    }
 
     if (target.result.os.tag.isDarwin()) {
         try AppleSdk.addPaths(b, llama_lib);
@@ -323,7 +327,12 @@ pub fn build(
 }
 
 pub fn link(compile: *std.Build.Step.Compile, llama: LlamaLib) void {
-    compile.root_module.linkLibrary(llama.lib);
+    if (compile.rootModuleTarget().os.tag.isDarwin()) {
+        compile.root_module.addObjectFile(llama.lib.getEmittedBin());
+        compile.root_module.addObjectFile(llama.ggml.getEmittedBin());
+    } else {
+        compile.root_module.linkLibrary(llama.lib);
+    }
     compile.root_module.addIncludePath(llama.include_path);
     compile.root_module.addIncludePath(llama.ggml_include_path);
 }

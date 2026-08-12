@@ -111,6 +111,54 @@ pub export fn bobrwhisper_get_audio_level(app: ?*App) f32 {
     return a.getAudioLevel();
 }
 
+pub export fn bobrwhisper_audio_device_count(app: ?*App) usize {
+    const a = app orelse return 0;
+    return a.inputDeviceCount();
+}
+
+pub export fn bobrwhisper_audio_device_at(
+    app: ?*App,
+    index: usize,
+    out_device: ?*c.AudioDeviceDescriptor,
+) bool {
+    const a = app orelse return false;
+    const out = out_device orelse return false;
+    const info = a.inputDeviceAt(index) orelse return false;
+    const kind_text: []const u8 = switch (info.kind) {
+        .internal => "internal",
+        .bluetooth => "bluetooth",
+        .usb => "usb",
+        .unknown => "unknown",
+    };
+    const kind = a.allocator.dupe(u8, kind_text) catch {
+        a.allocator.free(info.id);
+        a.allocator.free(info.name);
+        return false;
+    };
+    out.* = .{
+        .id = c.String.fromSlice(info.id),
+        .name = c.String.fromSlice(info.name),
+        .kind = c.String.fromSlice(kind),
+    };
+    return true;
+}
+
+pub export fn bobrwhisper_audio_device_descriptor_free(device: ?*c.AudioDeviceDescriptor) void {
+    const d = device orelse return;
+    const alloc = global_allocator orelse return;
+    d.id.deinit(alloc);
+    d.name.deinit(alloc);
+    d.kind.deinit(alloc);
+    d.* = undefined;
+}
+
+pub export fn bobrwhisper_set_input_device(app: ?*App, device_id: ?[*:0]const u8) bool {
+    const a = app orelse return false;
+    const id = device_id orelse return false;
+    a.setInputDevice(std.mem.span(id)) catch return false;
+    return true;
+}
+
 pub export fn bobrwhisper_model_count(app: ?*App) usize {
     _ = app;
     return asr.ModelRegistry.count();

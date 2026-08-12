@@ -76,6 +76,7 @@ log_store: LogStore,
 dictionary: DictionaryStore,
 custom_prompt: ?[]u8 = null,
 loaded_model_id: ?[:0]const u8 = null,
+selected_input_device: ?[]u8 = null,
 
 // Live transcription state
 live_thread: ?std.Thread = null,
@@ -122,6 +123,7 @@ pub fn deinit(self: *App) void {
     if (self.transcriber) |*t| t.deinit();
     if (self.live_transcriber) |*t| t.deinit();
     if (self.audio) |*a| a.deinit();
+    if (self.selected_input_device) |device_id| self.allocator.free(device_id);
     if (has_llm) {
         if (self.llama) |*l| l.deinit();
     }
@@ -353,9 +355,57 @@ pub fn getModelPath(self: *App, size: c_api.ModelSize) !c_api.String {
     return self.getModelPathByID(size.toModelID());
 }
 
+pub fn inputDeviceCount(self: *App) usize {
+    const devices = AudioDevice.listInputDevices(self.allocator) catch return 0;
+    AudioDevice.freeList(self.allocator, devices);
+    return devices.len;
+}
+
+pub fn inputDeviceAt(self: *App, index: usize) ?AudioDevice.Info {
+    const devices = AudioDevice.listInputDevices(self.allocator) catch return null;
+    if (index >= devices.len) {
+        AudioDevice.freeList(self.allocator, devices);
+        return null;
+    }
+    const selected = devices[index];
+    const name = self.allocator.dupe(u8, selected.name) catch {
+        AudioDevice.freeList(self.allocator, devices);
+        return null;
+    };
+    const id = self.allocator.dupe(u8, selected.id) catch {
+        self.allocator.free(name);
+        AudioDevice.freeList(self.allocator, devices);
+        return null;
+    };
+    const copy = AudioDevice.Info{
+        .name = name,
+        .id = id,
+        .kind = selected.kind,
+    };
+    AudioDevice.freeList(self.allocator, devices);
+    return copy;
+}
+
+pub fn setInputDevice(self: *App, device_id: []const u8) !void {
+    if (self.isRecording()) return error.RecordingInProgress;
+    const copy = if (device_id.len == 0)
+        null
+    else
+        try self.allocator.dupe(u8, device_id);
+    if (self.selected_input_device) |old| self.allocator.free(old);
+    self.selected_input_device = copy;
+    if (self.audio) |*audio| {
+        audio.device_uid = self.selected_input_device;
+        audio.device_name = self.selected_input_device;
+    }
+}
+
 pub fn startRecording(self: *App) !void {
     if (self.audio == null) {
-        self.audio = try AudioCapture.init(self.allocator);
+        self.audio = try AudioCapture.initWithConfig(self.allocator, .{
+            .device_uid = self.selected_input_device,
+            .device_name = self.selected_input_device,
+        });
     }
 
     self.stuck_mic_warned = false;
@@ -372,7 +422,10 @@ pub fn startRecordingWithLiveTranscription(self: *App, language: []const u8) !vo
     }
 
     if (self.audio == null) {
-        self.audio = try AudioCapture.init(self.allocator);
+        self.audio = try AudioCapture.initWithConfig(self.allocator, .{
+            .device_uid = self.selected_input_device,
+            .device_name = self.selected_input_device,
+        });
     }
 
     // Reset state
@@ -864,7 +917,8 @@ fn refreshDictionaryPrompt(self: *App) void {
     }
 }
 
-/// Inspect the current default input device via CoreAudio and surface a
+/// Inspect the app-selected input device (or the system default in follow
+/// mode) via CoreAudio and surface a
 /// one-shot warning when it is a Bluetooth mic (typically AirPods). Uses the
 /// OS-reported `kAudioDevicePropertyTransportType`, which is more robust than
 /// substring matching the device name (no false negatives across locales or
@@ -880,14 +934,14 @@ fn refreshDictionaryPrompt(self: *App) void {
 /// recording start (not latched) so a user who switches to a BT device
 /// after launch picks up the new params without restarting.
 fn checkInputDevice(self: *App) void {
-    const info = AudioDevice.detectDefaultInput(self.allocator) orelse return;
+    const info = AudioDevice.detectInput(self.allocator, self.selected_input_device) orelse return;
     defer info.deinit(self.allocator);
     if (info.kind != .bluetooth) return;
 
     if (!self.bluetooth_mic_warned) {
         self.bluetooth_mic_warned = true;
         std.log.warn(
-            "Default input is a Bluetooth device ({s}); BT mics add latency and degrade transcription quality",
+            "App input is a Bluetooth device ({s}); BT mics add latency and degrade transcription quality",
             .{info.name},
         );
         self.notifyWarning(

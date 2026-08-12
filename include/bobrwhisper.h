@@ -39,6 +39,12 @@ typedef struct {
     bool available_on_this_device;
 } bobrwhisper_model_descriptor_s;
 
+typedef struct {
+    bobrwhisper_string_s id;
+    bobrwhisper_string_s name;
+    bobrwhisper_string_s kind;
+} bobrwhisper_audio_device_descriptor_s;
+
 typedef enum {
     BOBRWHISPER_MODEL_TINY = 0,
     BOBRWHISPER_MODEL_BASE = 1,
@@ -161,6 +167,17 @@ bobrwhisper_status_e bobrwhisper_get_status(bobrwhisper_app_t app);
 
 // Audio level (RMS) - returns 0.0 when not recording
 float bobrwhisper_get_audio_level(bobrwhisper_app_t app);
+
+size_t bobrwhisper_audio_device_count(bobrwhisper_app_t app);
+bool bobrwhisper_audio_device_at(
+    bobrwhisper_app_t app,
+    size_t index,
+    bobrwhisper_audio_device_descriptor_s* out_device
+);
+void bobrwhisper_audio_device_descriptor_free(bobrwhisper_audio_device_descriptor_s* device);
+/** Select the app's recording device without changing the system default.
+ * Pass an empty string to follow the system default input device. */
+bool bobrwhisper_set_input_device(bobrwhisper_app_t app, const char* device_id);
 
 // =============================================================================
 // Utility

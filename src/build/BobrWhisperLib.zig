@@ -53,8 +53,24 @@ pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
     try deps.link(b, lib);
     lib.bundle_compiler_rt = true;
 
+    // Darwin dependencies are already bundled into this library. Rewrite it
+    // as a Darwin-format archive so Apple ld sees 8-byte-aligned members.
+    if (deps.target.result.os.tag.isDarwin()) {
+        const archive = LibtoolStep.create(b, .{
+            .name = "bobrwhisper",
+            .target = deps.target,
+            .sources = &.{lib.getEmittedBin()},
+        });
+        archive.step.dependOn(&lib.step);
+        return .{
+            .step = archive.step,
+            .output = archive.output,
+        };
+    }
+
     const libtool = LibtoolStep.create(b, .{
         .name = "bobrwhisper",
+        .target = deps.target,
         .sources = &.{
             lib.getEmittedBin(),
             deps.whisper.lib.getEmittedBin(),
