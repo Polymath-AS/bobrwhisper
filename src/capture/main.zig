@@ -26,6 +26,7 @@ pub const Ring = @import("Ring.zig");
 /// still compiles and links everywhere — a Windows consumer gets a clear runtime
 /// error instead of a missing symbol.
 pub const backend = switch (builtin.os.tag) {
+    .macos, .ios => @import("coreaudio.zig"),
     .linux => @import("alsa.zig"),
     else => @import("unsupported.zig"),
 };
