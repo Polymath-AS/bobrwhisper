@@ -9,6 +9,7 @@ zig build              # Build library + CLI
 zig build run          # Build and run macOS app
 zig build run-cli      # Run CLI
 zig build test         # Run tests
+zig build bench-simd   # Scalar vs. vector timings for the audio helpers
 zig build xcframework  # Build XCFramework for macOS
 zig build xcframework-ios  # Build XCFramework for iOS
 zig build macos        # Build macOS app via Xcode

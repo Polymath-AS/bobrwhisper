@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run unit tests");
     const test_libwhisper_step = b.step("test-libwhisper", "Run standalone libwhisper tests");
     const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
+    const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
 
     // Public Zig module for dependency consumers. It carries the whisper bridge
@@ -125,6 +126,29 @@ pub fn build(b: *std.Build) !void {
     run_c_smoke.expectExitCode(0);
     test_libwhisper_step.dependOn(&run_c_smoke.step);
     test_step.dependOn(&run_c_smoke.step);
+
+    // Scalar-vs-vector timings for src/simd.zig. It links nothing — no whisper,
+    // no ggml, no libc — so it stays runnable on any host, and it is pinned to
+    // ReleaseFast because a Debug build would only be measuring the absence of
+    // optimization in both columns.
+    const simd_module = b.createModule(.{
+        .root_source_file = b.path("src/simd.zig"),
+        .target = config.target,
+        .optimize = .ReleaseFast,
+    });
+    const bench_simd = b.addExecutable(.{
+        .name = "simd-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/simd-bench/main.zig"),
+            .target = config.target,
+            .optimize = .ReleaseFast,
+            .imports = &.{.{ .name = "simd", .module = simd_module }},
+        }),
+    });
+    bench_simd_step.dependOn(&b.addRunArtifact(bench_simd).step);
+    // Compile it under the regular test step so it cannot rot unnoticed. It is
+    // not run there: a timing loop is not a pass/fail check.
+    test_step.dependOn(&bench_simd.step);
 
     // Keep the benchmark on the public C boundary and link the exact combined
     // static archive that `zig build libwhisper` installs. Arguments after `--`
