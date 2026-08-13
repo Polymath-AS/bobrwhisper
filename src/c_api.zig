@@ -52,6 +52,12 @@ pub const ModelRuntime = enum(c_int) {
 
 pub const ModelCapabilities = u64;
 
+pub const AudioDeviceDescriptor = extern struct {
+    id: String,
+    name: String,
+    kind: String,
+};
+
 pub const ModelDescriptor = extern struct {
     id: ?[*:0]const u8,
     display_name: ?[*:0]const u8,

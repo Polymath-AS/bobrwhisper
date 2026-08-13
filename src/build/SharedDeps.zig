@@ -82,7 +82,14 @@ pub fn link(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Com
     try linkAppleFrameworks(b, compile, self.target);
     compile.root_module.linkSystemLibrary("sqlite3", .{});
     compile.root_module.linkSystemLibrary("c", .{});
-    compile.root_module.linkSystemLibrary("c++", .{});
+    if (self.target.result.os.tag.isDarwin()) {
+        try AppleSdk.linkCxxRuntime(b, compile);
+    } else {
+        compile.root_module.linkSystemLibrary("c++", .{});
+    }
+    if (self.target.result.os.tag == .linux) {
+        compile.root_module.linkSystemLibrary("asound", .{});
+    }
 }
 
 /// Link only the dependencies required by libwhisper. In particular, this

@@ -124,6 +124,19 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            Section("App Microphone") {
+                Picker("Record from", selection: $appState.selectedInputDeviceID) {
+                    Text("Follow system default").tag("")
+                    ForEach(appState.inputDevices) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
+                .disabled(appState.isRecording)
+                Text("BobrWhisper records from this microphone without changing the system input device. The selection applies to the next recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Startup") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
             }
@@ -160,6 +173,9 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            appState.refreshInputDevices()
+        }
     }
 }
 

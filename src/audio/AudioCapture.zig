@@ -3,7 +3,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = if (builtin.os.tag == .macos) MacAudio else struct {};
+const c = if (builtin.os.tag == .macos) MacAudio else if (builtin.os.tag == .linux) LinuxAudio else struct {};
 
 /// Minimal CoreAudio/AudioQueue ABI surface used by this module.
 ///
@@ -18,6 +18,7 @@ const MacAudio = struct {
     pub const AudioFormatID = UInt32;
     pub const AudioFormatFlags = UInt32;
     pub const AudioQueueRef = ?*opaque {};
+    pub const CFStringRef = ?*opaque {};
 
     pub const AudioStreamBasicDescription = extern struct {
         mSampleRate: Float64,
@@ -83,9 +84,51 @@ const MacAudio = struct {
     ) OSStatus;
 
     pub extern "c" fn AudioQueueStart(inAQ: AudioQueueRef, inStartTime: ?*const AudioTimeStamp) OSStatus;
+    pub extern "c" fn AudioQueueSetProperty(
+        inAQ: AudioQueueRef,
+        inID: UInt32,
+        inDataSize: UInt32,
+        inData: *const anyopaque,
+    ) OSStatus;
     pub extern "c" fn AudioQueueStop(inAQ: AudioQueueRef, inImmediate: u8) OSStatus;
     pub extern "c" fn AudioQueueDispose(inAQ: AudioQueueRef, inImmediate: u8) OSStatus;
+    pub extern "c" fn CFStringCreateWithBytes(
+        alloc: ?*anyopaque,
+        bytes: [*]const u8,
+        numBytes: c_long,
+        encoding: UInt32,
+        isExternalRepresentation: u8,
+    ) CFStringRef;
+    pub extern "c" fn CFRelease(cf: *const anyopaque) void;
+
+    pub const kCFStringEncodingUTF8: UInt32 = 0x08000100;
 };
+
+const LinuxAudio = struct {
+    pub const SndPcm = opaque {};
+    pub const SND_PCM_STREAM_CAPTURE: c_int = 1;
+    pub const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
+    pub const SND_PCM_FORMAT_FLOAT_LE: c_int = 10;
+
+    pub extern "asound" fn snd_pcm_open(pcm: *?*SndPcm, name: [*:0]const u8, stream: c_int, mode: c_int) c_int;
+    pub extern "asound" fn snd_pcm_set_params(
+        pcm: ?*SndPcm,
+        format: c_int,
+        access: c_int,
+        channels: u32,
+        rate: u32,
+        soft_resample: c_int,
+        latency: u32,
+    ) c_int;
+    pub extern "asound" fn snd_pcm_readi(pcm: ?*SndPcm, buffer: *anyopaque, size: usize) isize;
+    pub extern "asound" fn snd_pcm_recover(pcm: ?*SndPcm, err: c_int, silent: c_int) c_int;
+    pub extern "asound" fn snd_pcm_drop(pcm: ?*SndPcm) c_int;
+    pub extern "asound" fn snd_pcm_close(pcm: ?*SndPcm) c_int;
+};
+
+inline fn fourCC(comptime s: *const [4]u8) u32 {
+    return (@as(u32, s[0]) << 24) | (@as(u32, s[1]) << 16) | (@as(u32, s[2]) << 8) | @as(u32, s[3]);
+}
 
 const AudioCapture = @This();
 
@@ -103,15 +146,22 @@ const SpinMutex = struct {
     }
 };
 
-
 allocator: std.mem.Allocator,
 is_recording: bool = false,
 sample_rate: f64 = 16000.0,
 buffer_duration_ms: u32 = 30,
+device_uid: ?[]const u8 = null,
+device_name: ?[]const u8 = null,
 
 // CoreAudio handles (macOS only)
 audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
     if (builtin.os.tag == .macos) null else {},
+linux_pcm: if (builtin.os.tag == .linux) ?c.SndPcm else void =
+    if (builtin.os.tag == .linux) null else {},
+linux_thread: if (builtin.os.tag == .linux) ?std.Thread else void =
+    if (builtin.os.tag == .linux) null else {},
+linux_stop: if (builtin.os.tag == .linux) std.atomic.Value(bool) else void =
+    if (builtin.os.tag == .linux) std.atomic.Value(bool).init(false) else {},
 
 // Buffer for captured audio (protected by mutex for thread safety)
 buffer: std.ArrayListUnmanaged(f32),
@@ -127,6 +177,8 @@ pub const Config = struct {
     sample_rate: f64 = 16000.0,
     channels: u32 = 1,
     buffer_duration_ms: u32 = 30,
+    device_uid: ?[]const u8 = null,
+    device_name: ?[]const u8 = null,
 };
 
 pub fn init(allocator: std.mem.Allocator) !AudioCapture {
@@ -138,6 +190,8 @@ pub fn initWithConfig(allocator: std.mem.Allocator, config: Config) !AudioCaptur
         .allocator = allocator,
         .sample_rate = config.sample_rate,
         .buffer_duration_ms = config.buffer_duration_ms,
+        .device_uid = config.device_uid,
+        .device_name = config.device_name,
         .buffer = .empty,
     };
 }
@@ -164,6 +218,8 @@ pub fn start(self: *AudioCapture) !void {
 
     if (builtin.os.tag == .macos) {
         try self.startCoreAudio();
+    } else if (builtin.os.tag == .linux) {
+        try self.startLinux();
     } else {
         return error.UnsupportedPlatform;
     }
@@ -176,6 +232,8 @@ pub fn stop(self: *AudioCapture) void {
 
     if (builtin.os.tag == .macos) {
         self.stopCoreAudio();
+    } else if (builtin.os.tag == .linux) {
+        self.stopLinux();
     }
 
     self.is_recording = false;
@@ -250,6 +308,14 @@ pub fn clearBuffer(self: *AudioCapture) void {
 fn startCoreAudio(self: *AudioCapture) !void {
     if (builtin.os.tag != .macos) return;
 
+    // A stopped AudioQueue remains bound to its original device. Recreate it
+    // for each recording so a Settings change takes effect without touching
+    // macOS's global input device.
+    if (self.audio_queue != null) {
+        _ = c.AudioQueueDispose(self.audio_queue, 1);
+        self.audio_queue = null;
+    }
+
     // Audio format: 16kHz, mono, float32
     var format = c.AudioStreamBasicDescription{
         .mSampleRate = self.sample_rate,
@@ -279,6 +345,28 @@ fn startCoreAudio(self: *AudioCapture) !void {
         return error.AudioQueueCreationFailed;
     }
 
+    if (self.device_uid) |device_uid| {
+        const device_uid_ref = c.CFStringCreateWithBytes(
+            null,
+            device_uid.ptr,
+            @intCast(device_uid.len),
+            c.kCFStringEncodingUTF8,
+            0,
+        ) orelse return error.InvalidInputDevice;
+        defer c.CFRelease(device_uid_ref);
+        var property_value: c.CFStringRef = device_uid_ref;
+        status = c.AudioQueueSetProperty(
+            self.audio_queue,
+            comptime fourCC("aqcd"),
+            @sizeOf(c.CFStringRef),
+            @ptrCast(&property_value),
+        );
+        if (status != c.noErr) {
+            std.log.err("AudioQueueSetProperty(current device) failed: {}", .{status});
+            return error.AudioDeviceSelectionFailed;
+        }
+    }
+
     // Allocate and enqueue buffers
     const buffer_duration_sec = @as(f64, @floatFromInt(self.buffer_duration_ms)) / 1000.0;
     const buffer_size: u32 = @intFromFloat(self.sample_rate * buffer_duration_sec * @sizeOf(f32));
@@ -305,6 +393,67 @@ fn startCoreAudio(self: *AudioCapture) !void {
         return error.AudioQueueStartFailed;
     }
     std.log.info("AudioQueue started successfully", .{});
+}
+
+fn startLinux(self: *AudioCapture) !void {
+    if (builtin.os.tag != .linux) return;
+    const device = self.device_name orelse "default";
+    var name_buf: [256:0]u8 = undefined;
+    if (device.len >= name_buf.len) return error.InvalidInputDevice;
+    @memcpy(name_buf[0..device.len], device);
+    name_buf[device.len] = 0;
+
+    var pcm: ?*c.SndPcm = null;
+    if (c.snd_pcm_open(&pcm, &name_buf, c.SND_PCM_STREAM_CAPTURE, 0) < 0) return error.AudioDeviceOpenFailed;
+    errdefer _ = c.snd_pcm_close(pcm);
+    if (c.snd_pcm_set_params(
+        pcm,
+        c.SND_PCM_FORMAT_FLOAT_LE,
+        c.SND_PCM_ACCESS_RW_INTERLEAVED,
+        1,
+        @intFromFloat(self.sample_rate),
+        1,
+        self.buffer_duration_ms * 1000,
+    ) < 0) return error.AudioDeviceConfigurationFailed;
+    self.linux_pcm = pcm;
+    self.linux_stop.store(false, .seq_cst);
+    self.linux_thread = try std.Thread.spawn(.{}, linuxCaptureLoop, .{self});
+}
+
+fn stopLinux(self: *AudioCapture) void {
+    if (builtin.os.tag != .linux) return;
+    self.linux_stop.store(true, .seq_cst);
+    if (self.linux_pcm) |pcm| _ = c.snd_pcm_drop(pcm);
+    if (self.linux_thread) |thread| thread.join();
+    self.linux_thread = null;
+    if (self.linux_pcm) |pcm| _ = c.snd_pcm_close(pcm);
+    self.linux_pcm = null;
+}
+
+fn linuxCaptureLoop(self: *AudioCapture) void {
+    var samples: [480]f32 = undefined;
+    while (!self.linux_stop.load(.seq_cst)) {
+        const read = c.snd_pcm_readi(self.linux_pcm, &samples, samples.len);
+        if (read < 0) {
+            if (c.snd_pcm_recover(self.linux_pcm, @intCast(read), 1) < 0) break;
+            continue;
+        }
+        const count: usize = @intCast(read);
+        if (count == 0) continue;
+        self.mutex.lock();
+        self.buffer.appendSlice(self.allocator, samples[0..count]) catch {
+            std.log.err("Failed to append ALSA samples", .{});
+        };
+        var energy: f32 = 0;
+        var any_nonzero = false;
+        for (samples[0..count]) |sample| {
+            energy += sample * sample;
+            any_nonzero = any_nonzero or sample != 0;
+        }
+        self.audio_level = @sqrt(energy / @as(f32, @floatFromInt(count)));
+        if (any_nonzero) self.consecutive_zero_samples = 0 else self.consecutive_zero_samples +|= count;
+        self.mutex.unlock();
+    }
 }
 
 fn stopCoreAudio(self: *AudioCapture) void {
@@ -396,8 +545,14 @@ pub fn trimSilenceBounds(samples: []const f32, threshold: f32) TrimBounds {
         end_idx -= window_size / 2;
     }
 
-    // Keep 0.5s of trailing context so whisper can finalize the last token
+    // Keep context on both sides of the detected speech. In particular, do
+    // not cut exactly at the first active window: plosives and very short
+    // words can begin below the energy threshold, and losing that onset can
+    // turn "I"/"a" into an empty transcript. The trailing context lets
+    // Whisper finalize the last token.
+    const head_padding: usize = 3200; // 0.2 s at 16 kHz
     const tail_padding: usize = 8000;
+    start_idx -|= head_padding;
     end_idx = @min(samples.len, end_idx + tail_padding);
 
     return .{ .start = start_idx, .end = end_idx };
@@ -476,6 +631,19 @@ test "voice activity detection" {
 
     try std.testing.expect(!detectVoiceActivity(&silence, 0.01));
     try std.testing.expect(detectVoiceActivity(&voice, 0.01));
+}
+
+test "silence trimming preserves leading context for short speech" {
+    var samples = [_]f32{0.0} ** 8000;
+    @memset(samples[4000..4160], 0.5); // A single 10 ms active window.
+
+    const bounds = trimSilenceBounds(&samples, 0.01);
+
+    // Detection overlaps the active window at sample 3920. The 0.2 s head
+    // padding must retain the quieter onset/context before it.
+    try std.testing.expect(bounds.start <= 720);
+    try std.testing.expect(bounds.start < 4000);
+    try std.testing.expect(bounds.end > 4160);
 }
 
 test "compute noise floor" {

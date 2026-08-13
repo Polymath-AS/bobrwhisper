@@ -182,7 +182,6 @@ fn readFileAll(file: std.Io.File, buffer: []u8) !void {
     try reader.interface.readSliceAll(buffer);
 }
 
-
 fn downloadFile(url: []const u8, dest_path: []const u8) !void {
     const dir_path = std.fs.path.dirname(dest_path) orelse return error.InvalidPath;
     std.Io.Dir.createDirAbsolute(compat.io(), dir_path, .default_dir) catch |err| switch (err) {
@@ -589,9 +588,9 @@ fn testWhisperCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
         .vad_enabled = vad_path != null,
         .vad_model_path = vad_path,
         .vad_threshold = if (whisper_mode) 0.3 else 0.5,
-        .vad_min_speech_ms = if (whisper_mode) 150 else 250,
+        .vad_min_speech_ms = 100,
         .vad_min_silence_ms = if (whisper_mode) 200 else 100,
-        .vad_speech_pad_ms = if (whisper_mode) 100 else 30,
+        .vad_speech_pad_ms = 150,
     }) catch |err| {
         std.debug.print("Failed to load model: {}\n", .{err});
         return;

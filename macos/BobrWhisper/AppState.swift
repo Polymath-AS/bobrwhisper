@@ -4,6 +4,11 @@ import Combine
 import BobrWhisperKit
 
 class AppState: ObservableObject {
+    struct InputDevice: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let kind: String
+    }
     @Published private(set) var status: Status = .idle
     @Published private(set) var isRecording: Bool = false
     @Published private(set) var lastTranscript: String = ""
@@ -27,6 +32,13 @@ class AppState: ObservableObject {
     }
     @Published private(set) var isModelLoaded: Bool = false
     @Published private(set) var audioLevel: Float = 0
+    @Published private(set) var inputDevices: [InputDevice] = []
+    @Published var selectedInputDeviceID: String = UserDefaults.standard.string(forKey: "inputDeviceID") ?? "" {
+        didSet {
+            UserDefaults.standard.set(selectedInputDeviceID, forKey: "inputDeviceID")
+            applySelectedInputDevice()
+        }
+    }
     
     var overlayController: OverlayPanelController?
     
@@ -199,9 +211,41 @@ class AppState: ObservableObject {
         }
 
         refreshAvailableModels()
+        refreshInputDevices()
+        applySelectedInputDevice()
         loadTranscriptLogFromStore()
         persistSettings()
         loadDefaultModel()
+    }
+
+    func refreshInputDevices() {
+        guard let app else { return }
+        let count = Int(bobrwhisper_audio_device_count(app))
+        var devices: [InputDevice] = []
+        devices.reserveCapacity(count)
+        for index in 0..<count {
+            var raw = bobrwhisper_audio_device_descriptor_s()
+            guard bobrwhisper_audio_device_at(app, index, &raw) else { continue }
+            defer { bobrwhisper_audio_device_descriptor_free(&raw) }
+            guard let id = string(from: raw.id), let name = string(from: raw.name) else { continue }
+            devices.append(InputDevice(id: id, name: name, kind: string(from: raw.kind) ?? "unknown"))
+        }
+        inputDevices = devices
+        if !selectedInputDeviceID.isEmpty && !devices.contains(where: { $0.id == selectedInputDeviceID }) {
+            selectedInputDeviceID = ""
+        }
+    }
+
+    private func applySelectedInputDevice() {
+        guard let app else { return }
+        selectedInputDeviceID.withCString { id in
+            _ = bobrwhisper_set_input_device(app, id)
+        }
+    }
+
+    private func string(from value: bobrwhisper_string_s) -> String? {
+        guard let ptr = value.ptr, value.len > 0 else { return nil }
+        return String(decoding: UnsafeRawBufferPointer(start: ptr, count: value.len), as: UTF8.self)
     }
     
     private func loadDefaultModel() {
