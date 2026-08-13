@@ -110,8 +110,21 @@ as part of `zig build test-libwhisper`.
 
 The flake exposes `libwhisper`, `libwhisper-debug`, `libwhisper-releasesafe`, and
 `libwhisper-releasefast` on Darwin and Linux; `libwhisper` is an alias for the
-ReleaseFast variant. `nix flake check` builds the library, runs its tests, and
-verifies that `nix/deps.nix` has not drifted from `build.zig.zon`.
+ReleaseFast variant. `nix flake check` builds the library and runs its tests,
+including the C ABI smoke test, inside the sandbox.
+
+whisper.cpp and llama.cpp are lazy dependencies, so a plain `zig build` fetches
+them on first use. The Nix build cannot reach the network, so it feeds Zig a
+prebuilt package set via `--system`, described by `build.zig.zon.nix`. That file
+is generated from `build.zig.zon` — regenerate it in the same commit as any
+dependency change, using the `zon2nix` provided by the dev shell:
+
+```bash
+zon2nix --16 --nix=build.zig.zon.nix build.zig.zon
+```
+
+Because the Nix pins are derived rather than restated, they cannot drift from
+`build.zig.zon`.
 
 As a Zig package dependency, import the `bobrwhisper` module; it carries the
 whisper.cpp bridge and its link dependencies, so no extra artifact wiring is

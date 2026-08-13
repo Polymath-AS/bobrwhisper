@@ -1,35 +1,14 @@
 {
   lib,
   stdenv,
-  fetchFromGitHub,
+  callPackage,
   # Must be a zig whose native libc detection works inside the build sandbox.
   # nixpkgs' zig_0_16 is patched for that; an unpatched upstream build (e.g. from
   # zig-overlay) falls back to musl headers here and fails to compile ggml.
   zig,
   optimize ? "ReleaseFast",
 }:
-let
-  deps = import ./deps.nix;
-  sources = lib.mapAttrs (
-    _name: dep:
-    fetchFromGitHub {
-      inherit (dep)
-        owner
-        repo
-        rev
-        hash
-        ;
-    }
-  ) deps;
-
-  # Zig 0.16 resolves dependencies from a project-local zig-pkg/<hash>
-  # directory, so staging the fetched sources there is what keeps the build
-  # offline. No `ar` or `libtool` is needed: CombineArchivesStep drives `zig ar`.
-  stageDeps = lib.concatMapStringsSep "\n" (
-    name: ''ln -s "${sources.${name}}" "zig-pkg/${deps.${name}.zigHash}"''
-  ) (lib.attrNames deps);
-in
-stdenv.mkDerivation {
+stdenv.mkDerivation (finalAttrs: {
   pname = "libwhisper";
   version = "0.1.0";
 
@@ -38,11 +17,20 @@ stdenv.mkDerivation {
     fileset = lib.fileset.unions [
       ../build.zig
       ../build.zig.zon
+      ../build.zig.zon.nix
       ../examples
       ../include
       ../pkg
       ../src
     ];
+  };
+
+  # build.zig.zon.nix is generated from build.zig.zon by zon2nix, which is in the
+  # dev shell. Deriving the pins instead of restating them is what makes drift
+  # between the Nix and Zig views of a dependency impossible; regenerate it in the
+  # same commit as any build.zig.zon dependency change.
+  deps = callPackage ../build.zig.zon.nix {
+    name = "libwhisper-cache-${finalAttrs.version}";
   };
 
   nativeBuildInputs = [ zig ];
@@ -52,13 +40,17 @@ stdenv.mkDerivation {
   preBuild = ''
     export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global-cache"
     export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local-cache"
-    mkdir -p zig-pkg
-    ${stageDeps}
   '';
 
+  # --system points Zig at the prebuilt package set, which is what keeps the
+  # build offline: whisper.cpp and llama.cpp are lazy dependencies, so without it
+  # Zig would try to fetch them mid-build.
   buildPhase = ''
     runHook preBuild
-    zig build libwhisper -Doptimize=${optimize} --prefix "$out"
+    zig build libwhisper \
+      --system "${finalAttrs.deps}" \
+      -Doptimize=${optimize} \
+      --prefix "$out"
     runHook postBuild
   '';
 
@@ -67,7 +59,9 @@ stdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    zig build test-libwhisper -Doptimize=${optimize}
+    zig build test-libwhisper \
+      --system "${finalAttrs.deps}" \
+      -Doptimize=${optimize}
     runHook postCheck
   '';
 
@@ -80,4 +74,4 @@ stdenv.mkDerivation {
     license = lib.licenses.bsl11;
     platforms = lib.platforms.unix;
   };
-}
+})

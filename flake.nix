@@ -11,10 +11,23 @@
       url = "github:mitchellh/zig-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Generates build.zig.zon.nix from build.zig.zon, so the Nix dependency pins
+    # are derived rather than restated and cannot drift. Provided in the dev shell
+    # for regeneration; the generated file is committed.
+    zon2nix = {
+      url = "github:jcollie/zon2nix?ref=main";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, zig, ... }:
+    {
+      nixpkgs,
+      zig,
+      zon2nix,
+      ...
+    }:
     let
       inherit (nixpkgs) lib;
 
@@ -67,46 +80,12 @@
         default = libwhisper;
       });
 
-      checks = forAllSystems (
-        system:
-        let
-          pkgs = pkgsFor system;
-          deps = import ./nix/deps.nix;
-
-          # Grep build.zig.zon for every rev and Zig package hash in
-          # nix/deps.nix. Zig does not re-verify a staged zig-pkg/<hash>
-          # directory, so drift here would silently build the wrong source.
-          pinChecks = lib.concatMapStringsSep "\n" (
-            name:
-            let
-              dep = deps.${name};
-            in
-            ''
-              for value in "${dep.rev}" "${dep.zigHash}"; do
-                if ! grep -qF "$value" "$zon"; then
-                  echo "nix/deps.nix pins ${name} at a value absent from build.zig.zon: $value" >&2
-                  status=1
-                fi
-              done
-            ''
-          ) (lib.attrNames deps);
-        in
-        {
-          # Builds libwhisper and runs its Zig tests plus the C ABI smoke test.
-          libwhisper = libwhisperFor system "ReleaseSafe";
-
-          dep-pins = pkgs.runCommand "libwhisper-dep-pins" { } ''
-            zon=${./build.zig.zon}
-            status=0
-            ${pinChecks}
-            if [ "$status" -ne 0 ]; then
-              echo "Update nix/deps.nix so its rev and hash match build.zig.zon." >&2
-              exit 1
-            fi
-            touch "$out"
-          '';
-        }
-      );
+      checks = forAllSystems (system: {
+        # Builds libwhisper and runs its Zig tests plus the C ABI smoke test.
+        # There is no dependency-pin check to run: build.zig.zon.nix is generated
+        # from build.zig.zon, so the two cannot disagree.
+        libwhisper = libwhisperFor system "ReleaseSafe";
+      });
 
       devShells = forAllSystems (
         system:
@@ -123,7 +102,11 @@
             packages = [
               (zigFor system)
               pkgs.zls
-            ];
+            ]
+            # Regenerate after any build.zig.zon dependency change:
+            #   zon2nix --16 --nix=build.zig.zon.nix build.zig.zon
+            # Guarded because zon2nix does not publish every system we support.
+            ++ lib.optional (zon2nix.packages ? ${system}) zon2nix.packages.${system}.zon2nix;
           };
         }
       );
