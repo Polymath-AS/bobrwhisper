@@ -13,21 +13,15 @@ pub const GgmlLib = struct {
     include_path: std.Build.LazyPath,
 };
 
-pub fn build(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) !LlamaLib {
-    const ggml = try buildGgml(b, target, optimize);
-    return buildWithGgml(b, target, optimize, ggml);
-}
-
+/// Null when llama.cpp has not been fetched yet. `lazyDependency` has already
+/// queued the fetch by then, and the build runner re-runs this script once it
+/// completes, so callers propagate the null and skip declaring their steps.
 pub fn buildGgml(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) !GgmlLib {
-    const llama_dep = b.dependency("llama", .{});
+) !?GgmlLib {
+    const llama_dep = b.lazyDependency("llama", .{}) orelse return null;
 
     // ggml
     const ggml = b.addLibrary(.{
@@ -280,13 +274,14 @@ pub fn buildGgml(
     };
 }
 
+/// Null under the same conditions as `buildGgml`.
 pub fn buildWithGgml(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     ggml_dep: GgmlLib,
-) !LlamaLib {
-    const llama_dep = b.dependency("llama", .{});
+) !?LlamaLib {
+    const llama_dep = b.lazyDependency("llama", .{}) orelse return null;
     const ggml = ggml_dep.lib;
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;

@@ -4,7 +4,11 @@ const buildpkg = @import("src/build/main.zig");
 
 pub fn build(b: *std.Build) !void {
     const config = buildpkg.Config.init(b);
-    const deps = try buildpkg.SharedDeps.init(b, &config);
+    // whisper.cpp and llama.cpp are lazy dependencies. On a first run they are
+    // not on disk yet: `lazyDependency` has queued the fetch and returned null,
+    // and the build runner re-runs this script once it finishes. Declaring no
+    // steps at all is the correct response, not an error.
+    const deps = try buildpkg.SharedDeps.init(b, &config) orelse return;
     const asr_module = buildpkg.AsrBuild.createModule(b, &deps, config.target, config.optimize);
 
     // Steps
@@ -50,10 +54,12 @@ pub fn build(b: *std.Build) !void {
     // Apple application artifacts are not even initialized on other hosts.
     // This keeps the standalone library build free of Xcode/Swift SDK probes.
     if (builtin.os.tag == .macos) {
-        const macos_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .macos);
+        // Neither can be null here: SharedDeps.init above already forced the
+        // lazy fetch, so returning early cannot strand the steps declared below.
+        const macos_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .macos) orelse return;
         xcframework_step.dependOn(macos_xcframework.step);
 
-        const ios_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .ios);
+        const ios_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .ios) orelse return;
         xcframework_ios_step.dependOn(ios_xcframework.step);
 
         const macos_app = buildpkg.BobrWhisperXcodebuild.init(b, &config, &macos_xcframework, .macos);

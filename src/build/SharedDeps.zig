@@ -20,7 +20,11 @@ llama: llama_build.LlamaLib,
 whisper: whisper_build.WhisperLib,
 metal_resources: ?MetalResources,
 
-pub fn init(b: *std.Build, config: *const Config) !SharedDeps {
+/// Null when whisper.cpp or llama.cpp has not been fetched yet; both are marked
+/// lazy in build.zig.zon. Callers must return early rather than declare steps
+/// against dependencies that are not on disk — the build runner fetches what
+/// `lazyDependency` requested and re-runs this script.
+pub fn init(b: *std.Build, config: *const Config) !?SharedDeps {
     return initForTarget(b, config, config.target, config.optimize);
 }
 
@@ -29,18 +33,18 @@ pub fn initForTarget(
     config: *const Config,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) !SharedDeps {
+) !?SharedDeps {
     // Force ReleaseFast for C/C++ deps - Xcode Debug enables UBSan which requires
     // linking the sanitizer runtime. Zig code can still use Debug mode.
     const c_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
 
-    const ggml = try llama_build.buildGgml(b, target, c_optimize);
-    const llama = try llama_build.buildWithGgml(b, target, c_optimize, ggml);
-    const whisper = try whisper_build.build(b, target, c_optimize, ggml);
+    const ggml = try llama_build.buildGgml(b, target, c_optimize) orelse return null;
+    const llama = try llama_build.buildWithGgml(b, target, c_optimize, ggml) orelse return null;
+    const whisper = try whisper_build.build(b, target, c_optimize, ggml) orelse return null;
 
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const metal_resources: ?MetalResources = if (is_darwin) blk: {
-        const llama_dep = b.dependency("llama", .{});
+        const llama_dep = b.lazyDependency("llama", .{}) orelse return null;
         break :blk .{
             .shader = llama_dep.path("ggml/src/ggml-metal/ggml-metal.metal"),
             .common_header = llama_dep.path("ggml/src/ggml-common.h"),
@@ -59,7 +63,7 @@ pub fn initForTarget(
     };
 }
 
-pub fn retarget(self: *const SharedDeps, b: *std.Build, target: std.Build.ResolvedTarget) !SharedDeps {
+pub fn retarget(self: *const SharedDeps, b: *std.Build, target: std.Build.ResolvedTarget) !?SharedDeps {
     return initForTarget(b, self.config, target, self.optimize);
 }
 
@@ -68,7 +72,7 @@ pub fn retargetWithOptimize(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) !SharedDeps {
+) !?SharedDeps {
     return initForTarget(b, self.config, target, optimize);
 }
 

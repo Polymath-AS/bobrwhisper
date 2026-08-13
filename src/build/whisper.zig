@@ -12,8 +12,8 @@ pub fn build(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     ggml: llama_build.GgmlLib,
-) !WhisperLib {
-    const whisper_dep = b.dependency("whisper", .{});
+) !?WhisperLib {
+    const whisper_dep = b.lazyDependency("whisper", .{}) orelse return null;
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
     const has_metal = target.result.os.tag.isDarwin() and !is_ios_simulator;
 

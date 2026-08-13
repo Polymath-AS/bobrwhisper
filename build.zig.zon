@@ -10,12 +10,14 @@
         .whisper = .{
             .url = "git+https://github.com/ggml-org/whisper.cpp#306c88f4d1286aec1bf96e544632897886af5501",
             .hash = "N-V-__8AAKtFZQKKnEaIgq64slwmJVLwca5fkteZI0LoU8mu",
+            .lazy = true,
         },
         // llama.cpp b10405. Only ggml is used for transcription; the llama
         // library itself is for the app's LLM formatting.
         .llama = .{
             .url = "git+https://github.com/ggml-org/llama.cpp#e79e4bf660e19f2ad851e06c6913f7a8c5852621",
             .hash = "N-V-__8AAOuNCQq9rWVHqDNhLl3CMV63XKzbv4P3Iq6eDN3V",
+            .lazy = true,
         },
     },
 

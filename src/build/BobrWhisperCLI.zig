@@ -12,7 +12,9 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !BobrWhisperCLI {
     // Force ReleaseFast for CLI - ggml uses pointer arithmetic patterns that
     // trigger Zig's runtime safety checks (null pointer offset) in Debug mode
     const cli_optimize: std.builtin.OptimizeMode = if (deps.optimize == .Debug) .ReleaseFast else deps.optimize;
-    const cli_deps = try deps.retargetWithOptimize(b, deps.target, cli_optimize);
+    // Non-null: the caller already holds resolved deps, so the lazy fetch this
+    // re-resolution goes through is a cache hit.
+    const cli_deps = try deps.retargetWithOptimize(b, deps.target, cli_optimize) orelse return error.DependencyNotFetched;
     const asr_module = AsrBuild.createModule(b, &cli_deps, deps.target, cli_optimize);
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/cli.zig"),

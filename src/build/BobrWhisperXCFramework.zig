@@ -9,18 +9,18 @@ pub const Target = enum { macos, ios };
 
 step: *std.Build.Step,
 
-pub fn init(b: *std.Build, config: *const Config, target: Target) !BobrWhisperXCFramework {
+pub fn init(b: *std.Build, config: *const Config, target: Target) !?BobrWhisperXCFramework {
     return switch (target) {
         .macos => initMacOS(b, config),
         .ios => initIOS(b, config),
     };
 }
 
-fn initMacOS(b: *std.Build, config: *const Config) !BobrWhisperXCFramework {
+fn initMacOS(b: *std.Build, config: *const Config) !?BobrWhisperXCFramework {
     const opt = config.xcframeworkOptimize();
     const target = Config.macosArm64Target(b);
 
-    const deps = try SharedDeps.initForTarget(b, config, target, opt);
+    const deps = try SharedDeps.initForTarget(b, config, target, opt) orelse return null;
     const lib = try BobrWhisperLib.initStatic(b, &deps);
 
     const mkdir = b.addSystemCommand(&.{ "mkdir", "-p", "macos/BobrWhisperKit.xcframework/macos-arm64/include" });
@@ -43,11 +43,11 @@ fn initMacOS(b: *std.Build, config: *const Config) !BobrWhisperXCFramework {
     return .{ .step = &write_plist.step };
 }
 
-fn initIOS(b: *std.Build, config: *const Config) !BobrWhisperXCFramework {
+fn initIOS(b: *std.Build, config: *const Config) !?BobrWhisperXCFramework {
     const opt = config.xcframeworkOptimize();
 
-    const ios_deps = try SharedDeps.initForTarget(b, config, Config.iosDeviceTarget(b), opt);
-    const sim_deps = try SharedDeps.initForTarget(b, config, Config.iosSimulatorTarget(b), opt);
+    const ios_deps = try SharedDeps.initForTarget(b, config, Config.iosDeviceTarget(b), opt) orelse return null;
+    const sim_deps = try SharedDeps.initForTarget(b, config, Config.iosSimulatorTarget(b), opt) orelse return null;
 
     const ios_lib = try BobrWhisperLib.initStatic(b, &ios_deps);
     const sim_lib = try BobrWhisperLib.initStatic(b, &sim_deps);
