@@ -446,14 +446,9 @@ fn linuxCaptureLoop(self: *AudioCapture) void {
         self.buffer.appendSlice(self.allocator, samples[0..count]) catch {
             std.log.err("Failed to append ALSA samples", .{});
         };
-        var energy: f32 = 0;
-        var any_nonzero = false;
-        for (samples[0..count]) |sample| {
-            energy += sample * sample;
-            any_nonzero = any_nonzero or sample != 0;
-        }
-        self.audio_level = @sqrt(energy / @as(f32, @floatFromInt(count)));
-        if (any_nonzero) self.consecutive_zero_samples = 0 else self.consecutive_zero_samples +|= count;
+        const energy = simd.energy(samples[0..count]);
+        self.audio_level = @sqrt(energy.sum_of_squares / @as(f32, @floatFromInt(count)));
+        if (!energy.all_zero) self.consecutive_zero_samples = 0 else self.consecutive_zero_samples +|= count;
         self.mutex.unlock();
     }
 }
