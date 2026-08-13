@@ -17,6 +17,9 @@ pub extern fn bobrwhisper_whisper_transcribe(
     vad_min_silence_ms: i32,
     vad_speech_pad_ms: i32,
     initial_prompt: ?[*:0]const u8,
+    /// Cooperative cancellation. Polled between compute steps; pass null to
+    /// make the call uninterruptible.
+    abort_flag: ?*const bool,
 ) c_int;
 pub extern fn bobrwhisper_whisper_segment_count(ctx: *Context) i32;
 pub extern fn bobrwhisper_whisper_segment_text(ctx: *Context, segment_index: i32) ?[*:0]const u8;
