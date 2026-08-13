@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) !void {
     const ios_step = b.step("ios", "Build iOS app via Xcode");
     const test_step = b.step("test", "Run unit tests");
     const test_libwhisper_step = b.step("test-libwhisper", "Run standalone libwhisper tests");
+    const test_audio_step = b.step("test-audio", "Run audio processing library tests (no model or device needed)");
     const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
     const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
@@ -127,12 +128,25 @@ pub fn build(b: *std.Build) !void {
     test_libwhisper_step.dependOn(&run_c_smoke.step);
     test_step.dependOn(&run_c_smoke.step);
 
-    // Scalar-vs-vector timings for src/simd.zig. It links nothing — no whisper,
-    // no ggml, no libc — so it stays runnable on any host, and it is pinned to
-    // ReleaseFast because a Debug build would only be measuring the absence of
-    // optimization in both columns.
+    // Audio processing library. It depends on nothing — no whisper, no ggml, no
+    // platform audio API, no model fixture — which is why it has its own test
+    // step: it is the one part of this project that can be worked on and
+    // verified without an Apple toolchain or a microphone.
+    const audio_module = b.addModule("bobrwhisper-audio", .{
+        .root_source_file = b.path("src/audio/main.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
+    });
+    const audio_tests = b.addTest(.{ .root_module = audio_module });
+    test_audio_step.dependOn(&b.addRunArtifact(audio_tests).step);
+    test_step.dependOn(&b.addRunArtifact(audio_tests).step);
+
+    // Scalar-vs-vector timings for the audio SIMD helpers. It links nothing —
+    // no whisper, no ggml, no libc — so it stays runnable on any host, and it is
+    // pinned to ReleaseFast because a Debug build would only be measuring the
+    // absence of optimization in both columns.
     const simd_module = b.createModule(.{
-        .root_source_file = b.path("src/simd.zig"),
+        .root_source_file = b.path("src/audio/simd.zig"),
         .target = config.target,
         .optimize = .ReleaseFast,
     });
@@ -160,6 +174,9 @@ pub fn build(b: *std.Build) !void {
         "examples/bench/main.zig",
         "libwhisper-bench",
     );
+    // The benchmark decodes WAV through the audio library rather than carrying
+    // its own parser, which is the first real consumer of that boundary.
+    bench.root_module.addImport("audio", audio_module);
     const run_bench = b.addRunArtifact(bench);
     if (b.args) |args| run_bench.addArgs(args);
     bench_libwhisper_step.dependOn(&run_bench.step);

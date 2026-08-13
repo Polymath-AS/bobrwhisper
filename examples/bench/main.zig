@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("libwhisper");
+const audio = @import("audio");
 
 const sample_rate = 16000;
 
@@ -375,6 +376,9 @@ fn requireCount(
 }
 
 /// Decodes 16 kHz PCM16 or float32 RIFF/WAVE, downmixing to mono.
+/// Decode via the audio library rather than a parser embedded here: the WAV
+/// handling, the 16 kHz requirement and the mono downmix are all things the
+/// capture path needs too, so there is one implementation with its own tests.
 fn loadWav(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -387,79 +391,19 @@ fn loadWav(
     };
     defer gpa.free(bytes);
 
-    if (bytes.len < 12 or !eq(bytes[0..4], "RIFF") or !eq(bytes[8..12], "WAVE")) {
-        try stderr.print("{s} is not a RIFF/WAVE file\n", .{path});
-        return error.InvalidWav;
-    }
-
-    var format: u16 = 0;
-    var channels: u16 = 0;
-    var bits_per_sample: u16 = 0;
-    var rate: u32 = 0;
-    var data: ?[]const u8 = null;
-
-    var cursor: usize = 12;
-    while (cursor + 8 <= bytes.len) {
-        const id = bytes[cursor..][0..4];
-        const size = std.mem.readInt(u32, bytes[cursor + 4 ..][0..4], .little);
-        const body_start = cursor + 8;
-        const body_end = std.math.add(usize, body_start, size) catch break;
-        if (body_end > bytes.len) break;
-
-        if (eq(id, "fmt ") and size >= 16) {
-            const fmt = bytes[body_start..][0..16];
-            format = std.mem.readInt(u16, fmt[0..2], .little);
-            channels = std.mem.readInt(u16, fmt[2..4], .little);
-            rate = std.mem.readInt(u32, fmt[4..8], .little);
-            bits_per_sample = std.mem.readInt(u16, fmt[14..16], .little);
-        } else if (eq(id, "data")) {
-            data = bytes[body_start..body_end];
-        }
-
-        // Chunks are word-aligned: an odd size carries a trailing pad byte.
-        cursor = body_end + (size & 1);
-        if (format != 0 and data != null) break;
-    }
-
-    const payload = data orelse {
-        try stderr.print("{s} is missing a fmt or data chunk\n", .{path});
-        return error.InvalidWav;
+    const decoded = audio.wav.decode(gpa, bytes, null) catch |err| {
+        try stderr.print("cannot decode {s}: {t}\n", .{ path, err });
+        return err;
     };
-    if (format == 0) {
-        try stderr.print("{s} is missing a fmt or data chunk\n", .{path});
-        return error.InvalidWav;
-    }
-
-    const pcm16 = format == 1 and bits_per_sample == 16;
-    const float32 = format == 3 and bits_per_sample == 32;
-    if (rate != sample_rate or channels == 0 or !(pcm16 or float32)) {
+    // Benchmarking a resample would measure the wrong thing, so require the rate
+    // the library is built around instead of silently converting.
+    if (decoded.sample_rate != sample_rate) {
+        defer decoded.deinit(gpa);
         try stderr.print(
-            "{s}: expected 16 kHz PCM16 or float32 WAV; got format={d}, rate={d}, channels={d}, bits={d}\n",
-            .{ path, format, rate, channels, bits_per_sample },
+            "{s}: expected {d} Hz, got {d} Hz ({d} channels, {d}-bit)\n",
+            .{ path, sample_rate, decoded.sample_rate, decoded.source.channels, decoded.source.bits_per_sample },
         );
         return error.UnsupportedWav;
     }
-
-    const bytes_per_sample = bits_per_sample / 8;
-    const frame_size = bytes_per_sample * @as(usize, channels);
-    if (payload.len % frame_size != 0) {
-        try stderr.print("{s} has a truncated audio frame\n", .{path});
-        return error.InvalidWav;
-    }
-
-    const frames = payload.len / frame_size;
-    const samples = try gpa.alloc(f32, frames);
-    errdefer gpa.free(samples);
-    for (samples, 0..) |*sample, frame| {
-        var sum: f64 = 0;
-        for (0..channels) |channel| {
-            const offset = frame * frame_size + channel * bytes_per_sample;
-            sum += if (pcm16)
-                @as(f64, @floatFromInt(std.mem.readInt(i16, payload[offset..][0..2], .little))) / 32768.0
-            else
-                @as(f64, @floatCast(@as(f32, @bitCast(std.mem.readInt(u32, payload[offset..][0..4], .little)))));
-        }
-        sample.* = @floatCast(sum / @as(f64, @floatFromInt(channels)));
-    }
-    return samples;
+    return decoded.samples;
 }

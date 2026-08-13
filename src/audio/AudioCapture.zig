@@ -3,7 +3,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const simd = @import("../simd.zig");
+const simd = @import("simd.zig");
+const vad = @import("vad.zig");
+const level = @import("level.zig");
+const resample_mod = @import("resample.zig");
 
 const c = if (builtin.os.tag == .macos) MacAudio else if (builtin.os.tag == .linux) LinuxAudio else struct {};
 
@@ -501,165 +504,12 @@ fn audioInputCallback(
     _ = c.AudioQueueEnqueueBuffer(queue, buffer, 0, null);
 }
 
-pub fn detectVoiceActivity(samples: []const f32, threshold: f32) bool {
-    if (samples.len == 0) return false;
-
-    const energy = simd.sumOfSquares(samples) / @as(f32, @floatFromInt(samples.len));
-    return energy > threshold;
-}
-
-pub const TrimBounds = struct {
-    start: usize,
-    end: usize,
-};
-
-pub fn trimSilenceBounds(samples: []const f32, threshold: f32) TrimBounds {
-    if (samples.len == 0) return .{ .start = 0, .end = 0 };
-
-    const window_size: usize = 160;
-
-    var start_idx: usize = 0;
-    while (start_idx + window_size < samples.len) {
-        if (detectVoiceActivity(samples[start_idx .. start_idx + window_size], threshold)) {
-            break;
-        }
-        start_idx += window_size / 2;
-    }
-
-    var end_idx: usize = samples.len;
-    while (end_idx > start_idx + window_size) {
-        if (detectVoiceActivity(samples[end_idx - window_size .. end_idx], threshold)) {
-            break;
-        }
-        end_idx -= window_size / 2;
-    }
-
-    // Keep context on both sides of the detected speech. In particular, do
-    // not cut exactly at the first active window: plosives and very short
-    // words can begin below the energy threshold, and losing that onset can
-    // turn "I"/"a" into an empty transcript. The trailing context lets
-    // Whisper finalize the last token.
-    const head_padding: usize = 3200; // 0.2 s at 16 kHz
-    const tail_padding: usize = 8000;
-    start_idx -|= head_padding;
-    end_idx = @min(samples.len, end_idx + tail_padding);
-
-    return .{ .start = start_idx, .end = end_idx };
-}
-
-/// Estimate ambient noise floor from the first ~0.5s of audio.
-/// Returns the RMS energy of a leading window, useful for deriving
-/// an adaptive silence-trim threshold (e.g. 3× noise floor).
-pub fn computeNoiseFloor(samples: []const f32) f32 {
-    if (samples.len == 0) return 0;
-
-    const window: usize = @min(8000, samples.len);
-    const energy = simd.sumOfSquares(samples[0..window]);
-    return @sqrt(energy / @as(f32, @floatFromInt(window)));
-}
-
-/// In-place peak normalization. Scales `samples` so the largest absolute
-/// amplitude becomes `target_peak` (typically 0.95 to avoid hard clipping).
-/// Returns the gain factor that was applied. Only ever scales up: if the
-/// input is already at or above `target_peak` the buffer is unchanged.
-/// Silent buffers (peak < 1e-4) are also left alone to avoid amplifying noise.
-///
-/// Whispered speech routinely has peaks of ~0.25 vs. ~0.6 for normal voice,
-/// which produced a 4–7× WER improvement in the `tune` experiments. Applying
-/// this before trimming and transcription is safe for normal voice (the gain
-/// factor stays near 1.0) but materially helps quiet audio.
-pub fn peakNormalize(samples: []f32, target_peak: f32) f32 {
-    std.debug.assert(target_peak > 0.0);
-    std.debug.assert(target_peak <= 1.0);
-    if (samples.len == 0) return 1.0;
-
-    const peak = simd.maxAbs(samples);
-    if (peak < 1e-4 or peak >= target_peak) return 1.0;
-
-    const gain = target_peak / peak;
-    simd.scale(samples, gain);
-    return gain;
-}
-
-pub fn resample(allocator: std.mem.Allocator, samples: []const f32, from_rate: f64, to_rate: f64) ![]f32 {
-    if (from_rate == to_rate) {
-        return allocator.dupe(f32, samples);
-    }
-
-    const ratio = from_rate / to_rate;
-    const new_len: usize = @intFromFloat(@as(f64, @floatFromInt(samples.len)) / ratio);
-
-    const output = try allocator.alloc(f32, new_len);
-
-    for (0..new_len) |i| {
-        const src_idx = @as(f64, @floatFromInt(i)) * ratio;
-        const idx: usize = @intFromFloat(src_idx);
-        const frac = src_idx - @as(f64, @floatFromInt(idx));
-
-        if (idx + 1 < samples.len) {
-            output[i] = samples[idx] * @as(f32, @floatCast(1.0 - frac)) +
-                samples[idx + 1] * @as(f32, @floatCast(frac));
-        } else {
-            output[i] = samples[idx];
-        }
-    }
-
-    return output;
-}
-
-test "voice activity detection" {
-    const silence = [_]f32{0.0} ** 100;
-    const voice = [_]f32{0.5} ** 100;
-
-    try std.testing.expect(!detectVoiceActivity(&silence, 0.01));
-    try std.testing.expect(detectVoiceActivity(&voice, 0.01));
-}
-
-test "silence trimming preserves leading context for short speech" {
-    var samples = [_]f32{0.0} ** 8000;
-    @memset(samples[4000..4160], 0.5); // A single 10 ms active window.
-
-    const bounds = trimSilenceBounds(&samples, 0.01);
-
-    // Detection overlaps the active window at sample 3920. The 0.2 s head
-    // padding must retain the quieter onset/context before it.
-    try std.testing.expect(bounds.start <= 720);
-    try std.testing.expect(bounds.start < 4000);
-    try std.testing.expect(bounds.end > 4160);
-}
-
-test "compute noise floor" {
-    const silence = [_]f32{0.0} ** 100;
-    const noise = [_]f32{0.1} ** 100;
-
-    try std.testing.expectEqual(@as(f32, 0), computeNoiseFloor(&silence));
-    try std.testing.expect(computeNoiseFloor(&noise) > 0.09);
-    try std.testing.expect(computeNoiseFloor(&noise) < 0.11);
-    try std.testing.expectEqual(@as(f32, 0), computeNoiseFloor(&[_]f32{}));
-}
-
-test "peakNormalize boosts quiet audio" {
-    var samples = [_]f32{ 0.1, -0.2, 0.05, -0.1 };
-    const gain = peakNormalize(&samples, 0.95);
-    try std.testing.expectApproxEqAbs(@as(f32, 4.75), gain, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, -0.95), samples[1], 0.001);
-}
-
-test "peakNormalize leaves loud audio unchanged" {
-    var samples = [_]f32{ 0.5, -0.95 };
-    const gain = peakNormalize(&samples, 0.95);
-    try std.testing.expectEqual(@as(f32, 1.0), gain);
-    try std.testing.expectEqual(@as(f32, 0.5), samples[0]);
-}
-
-test "peakNormalize handles silence" {
-    var silence = [_]f32{0.0} ** 8;
-    const gain = peakNormalize(&silence, 0.95);
-    try std.testing.expectEqual(@as(f32, 1.0), gain);
-}
-
-test "peakNormalize empty buffer" {
-    var empty: [0]f32 = .{};
-    const gain = peakNormalize(&empty, 0.95);
-    try std.testing.expectEqual(@as(f32, 1.0), gain);
-}
+// Signal processing moved to the audio library, which has no platform
+// dependencies and is tested on its own (`zig build test-audio`). Re-exported
+// here so existing callers keep working and there is still one implementation.
+pub const detectVoiceActivity = vad.detectVoiceActivity;
+pub const TrimBounds = vad.TrimBounds;
+pub const trimSilenceBounds = vad.trimSilenceBounds;
+pub const computeNoiseFloor = vad.computeNoiseFloor;
+pub const peakNormalize = level.peakNormalize;
+pub const resample = resample_mod.resample;
