@@ -35,6 +35,7 @@ zig build ios          # Build iOS app via Xcode
 - `src/App.zig` - Core application state
 - `src/Transcriber.zig` - Whisper.cpp wrapper
 - `src/audio/AudioCapture.zig` - CoreAudio recording
+- `src/simd.zig` - Vectorized sample loops (RMS, peak, gain, i16 conversion)
 - `src/cli.zig` - CLI tool with live transcription
 - `src/build/whisper.zig` - Builds whisper.cpp from source
 - `src/build/llama.zig` - Builds llama.cpp from source

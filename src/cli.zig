@@ -7,6 +7,7 @@ const asr = @import("asr");
 const AudioCapture = @import("audio/AudioCapture.zig");
 const snippet = @import("snippet.zig");
 const tune = @import("tune.zig");
+const simd = @import("simd.zig");
 
 const has_llm = builtin.os.tag == .macos;
 const LlamaClient = if (has_llm) @import("llm/LlamaClient.zig") else void;
@@ -762,11 +763,7 @@ fn loadWavFile(allocator: std.mem.Allocator, path: []const u8) ![]f32 {
     var samples = try allocator.alloc(f32, num_samples);
     errdefer allocator.free(samples);
 
-    for (0..num_samples) |i| {
-        const offset = i * frame_bytes;
-        const sample_i16 = std.mem.readInt(i16, raw[offset..][0..2], .little);
-        samples[i] = @as(f32, @floatFromInt(sample_i16)) / 32768.0;
-    }
+    simd.dequantizeFromI16(raw, frame_bytes, samples);
 
     if (sample_rate != 16000) {
         std.debug.print("Resampling from {d}Hz to 16000Hz\n", .{sample_rate});

@@ -3,6 +3,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const simd = @import("../simd.zig");
+
 const c = if (builtin.os.tag == .macos) MacAudio else struct {};
 
 /// Minimal CoreAudio/AudioQueue ABI surface used by this module.
@@ -341,14 +343,11 @@ fn audioInputCallback(
         // surfaces a stuck microphone (dead route, denied permission at the
         // system level, suspended driver). RMS alone is too noisy: a quiet mic
         // still produces sub-1e-6 jitter, but a dead route is bit-exact zero.
-        var energy: f32 = 0;
-        var any_nonzero = false;
-        for (samples[0..sample_count]) |s| {
-            energy += s * s;
-            if (s != 0) any_nonzero = true;
-        }
-        self.audio_level = @sqrt(energy / @as(f32, @floatFromInt(sample_count)));
-        if (any_nonzero) {
+        // Vectorized because this runs on the realtime audio thread, under the
+        // mutex, for every buffer the device hands us.
+        const energy = simd.energy(samples[0..sample_count]);
+        self.audio_level = @sqrt(energy.sum_of_squares / @as(f32, @floatFromInt(sample_count)));
+        if (!energy.all_zero) {
             self.consecutive_zero_samples = 0;
         } else {
             self.consecutive_zero_samples +|= sample_count;
@@ -361,12 +360,7 @@ fn audioInputCallback(
 pub fn detectVoiceActivity(samples: []const f32, threshold: f32) bool {
     if (samples.len == 0) return false;
 
-    var energy: f32 = 0;
-    for (samples) |s| {
-        energy += s * s;
-    }
-    energy /= @floatFromInt(samples.len);
-
+    const energy = simd.sumOfSquares(samples) / @as(f32, @floatFromInt(samples.len));
     return energy > threshold;
 }
 
@@ -410,10 +404,7 @@ pub fn computeNoiseFloor(samples: []const f32) f32 {
     if (samples.len == 0) return 0;
 
     const window: usize = @min(8000, samples.len);
-    var energy: f32 = 0;
-    for (samples[0..window]) |s| {
-        energy += s * s;
-    }
+    const energy = simd.sumOfSquares(samples[0..window]);
     return @sqrt(energy / @as(f32, @floatFromInt(window)));
 }
 
@@ -432,15 +423,11 @@ pub fn peakNormalize(samples: []f32, target_peak: f32) f32 {
     std.debug.assert(target_peak <= 1.0);
     if (samples.len == 0) return 1.0;
 
-    var peak: f32 = 0;
-    for (samples) |s| {
-        const a = @abs(s);
-        if (a > peak) peak = a;
-    }
+    const peak = simd.maxAbs(samples);
     if (peak < 1e-4 or peak >= target_peak) return 1.0;
 
     const gain = target_peak / peak;
-    for (samples) |*s| s.* *= gain;
+    simd.scale(samples, gain);
     return gain;
 }
 

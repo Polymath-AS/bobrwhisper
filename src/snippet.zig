@@ -12,6 +12,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const compat = @import("compat.zig");
+const simd = @import("simd.zig");
 const AudioCapture = @import("audio/AudioCapture.zig");
 const AudioDevice = @import("audio/AudioDevice.zig");
 
@@ -279,10 +280,7 @@ fn writeWav(path: []const u8, samples: []const f32) !void {
     var i: usize = 0;
     while (i < samples.len) {
         const n = @min(chunk.len, samples.len - i);
-        for (0..n) |k| {
-            const clamped = std.math.clamp(samples[i + k], -1.0, 1.0);
-            chunk[k] = @intFromFloat(clamped * 32767.0);
-        }
+        simd.quantizeToI16(samples[i..][0..n], &chunk);
         try file.writeStreamingAll(compat.io(), std.mem.sliceAsBytes(chunk[0..n]));
         i += n;
     }
