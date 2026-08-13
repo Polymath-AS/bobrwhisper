@@ -124,6 +124,21 @@ inspect all options with:
 zig build bench-libwhisper -- --help
 ```
 
+`scripts/fetch-speeches.nu` fetches public-domain speech recordings from
+LibriVox and converts them to the 16 kHz mono WAV the benchmark expects, writing
+a manifest alongside them:
+
+```bash
+nu scripts/fetch-speeches.nu --max-seconds 30    # -> corpus/speeches/
+```
+
+Profiling with [poop](https://github.com/andrewrk/poop) on a 24-core machine is
+what motivated the default of 4 decoder threads: 1 → 4 threads cuts wall time
+71% for 4% more CPU cycles, while 4 → 8 buys only another 31% and costs 28% more
+cycles with roughly flat instruction count — past 4 threads it is waiting on
+memory, not computing. `ReleaseSmall` is not worth it here: 40% slower for 2%
+less resident memory, since the footprint is model weights rather than code.
+
 The flake exposes `libwhisper`, `libwhisper-debug`, `libwhisper-releasesafe`, and
 `libwhisper-releasefast` on Darwin and Linux; `libwhisper` is an alias for the
 ReleaseFast variant. `nix flake check` builds the library and runs its tests,

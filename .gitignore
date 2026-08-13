@@ -43,5 +43,7 @@ resources/
 
 # Audio recordings
 *.raw
+# Fetched or recorded test audio (see scripts/fetch-speeches.nu)
+/corpus/
 /zig-pkg
 .omx/
