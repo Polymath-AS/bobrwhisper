@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) !void {
     const ios_step = b.step("ios", "Build iOS app via Xcode");
     const test_step = b.step("test", "Run unit tests");
     const test_libwhisper_step = b.step("test-libwhisper", "Run standalone libwhisper tests");
+    const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
 
     // Public Zig module for dependency consumers. It carries the whisper bridge
@@ -124,4 +125,21 @@ pub fn build(b: *std.Build) !void {
     run_c_smoke.expectExitCode(0);
     test_libwhisper_step.dependOn(&run_c_smoke.step);
     test_step.dependOn(&run_c_smoke.step);
+
+    // Keep the benchmark on the public C boundary and link the exact combined
+    // static archive that `zig build libwhisper` installs. Arguments after `--`
+    // are forwarded to the runner, for example:
+    //   zig build bench-libwhisper -Doptimize=ReleaseFast -- model.bin audio.wav
+    const bench = libwhisper.addZigExample(
+        b,
+        &deps,
+        "examples/bench/main.zig",
+        "libwhisper-bench",
+    );
+    const run_bench = b.addRunArtifact(bench);
+    if (b.args) |args| run_bench.addArgs(args);
+    bench_libwhisper_step.dependOn(&run_bench.step);
+    // Compile (but do not run) it with the regular libwhisper checks so C API
+    // or build-wiring drift is caught without requiring a model fixture in CI.
+    test_libwhisper_step.dependOn(&bench.step);
 }

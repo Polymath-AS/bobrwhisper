@@ -74,8 +74,8 @@ fn createLibrary(
     return lib;
 }
 
-/// Build an executable that links the static library, used to smoke-test the C
-/// ABI from an actual C translation unit.
+/// Build an executable that links the installed static library, used to exercise
+/// the C ABI from an actual C translation unit.
 pub fn addCExample(
     self: *const LibWhisper,
     b: *std.Build,
@@ -93,10 +93,52 @@ pub fn addCExample(
     });
     exe.root_module.addCSourceFiles(.{ .files = &.{source} });
     exe.root_module.addIncludePath(b.path("include"));
-    // Link the combined archive rather than the Compile step, so the example
-    // exercises exactly the file consumers are given. The step dependency has to
-    // be explicit: an object file added to a module does not order the exe after
-    // the Run step that produces it, so a cold cache would link a missing file.
+    self.linkInstalledArchive(exe, deps);
+    return exe;
+}
+
+/// Same, for a Zig program. `libwhisper.h` is run through translate-c and
+/// imported as `libwhisper`, so the consumer still crosses the C ABI and the
+/// header still has to be valid C — a C example cannot check that the header
+/// survives translate-c, and this cannot check C compiler compatibility, so the
+/// two examples cover different things.
+pub fn addZigExample(
+    self: *const LibWhisper,
+    b: *std.Build,
+    deps: *const SharedDeps,
+    source: []const u8,
+    name: []const u8,
+) *std.Build.Step.Compile {
+    const header = b.addTranslateC(.{
+        .root_source_file = b.path("include/libwhisper.h"),
+        .target = deps.target,
+        .optimize = deps.optimize,
+    });
+
+    const exe = b.addExecutable(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(source),
+            .target = deps.target,
+            .optimize = deps.optimize,
+            .link_libc = true,
+        }),
+    });
+    exe.root_module.addImport("libwhisper", header.createModule());
+    self.linkInstalledArchive(exe, deps);
+    return exe;
+}
+
+/// Link the combined archive rather than the Compile step, so an example
+/// exercises exactly the file consumers are given.
+fn linkInstalledArchive(
+    self: *const LibWhisper,
+    exe: *std.Build.Step.Compile,
+    deps: *const SharedDeps,
+) void {
+    // The step dependency has to be explicit: an object file added to a module
+    // does not order the exe after the Run step that produces it, so a cold
+    // cache would link a missing file.
     exe.root_module.addObjectFile(self.static_output);
     self.static_output.addStepDependencies(&exe.step);
     exe.root_module.linkSystemLibrary("c++", .{});
@@ -107,7 +149,6 @@ pub fn addCExample(
         exe.root_module.linkFramework("Metal", .{});
         exe.root_module.linkFramework("MetalKit", .{});
     }
-    return exe;
 }
 
 fn pkgConfig(b: *std.Build, os_tag: std.Target.Os.Tag) std.Build.LazyPath {

@@ -64,6 +64,10 @@ zig build libwhisper -Doptimize=ReleaseFast
 # Zig unit tests plus a C ABI smoke test linked against the static archive.
 zig build test-libwhisper
 
+# Benchmark the public C ABI with a 16 kHz WAV file.
+zig build bench-libwhisper -Doptimize=ReleaseFast -- \
+  ~/.bobrwhisper/models/ggml-tiny.bin sample.wav
+
 # Reproducible Nix package (Debug and ReleaseSafe variants are also exposed).
 nix build .#libwhisper
 ```
@@ -106,7 +110,19 @@ libwhisper_destroy(transcriber);
 ```
 
 `examples/c-smoke/main.c` is the executable version of that contract, and runs
-as part of `zig build test-libwhisper`.
+as part of `zig build test-libwhisper`. It stays hand-written C on purpose: it is
+the only thing that checks the header compiles as C and that the pointer
+contracts above hold for a C caller.
+
+`examples/bench/main.zig` measures model initialization and repeated end-to-end
+transcription through that same C ABI, so its numbers include the overhead an
+embedder pays. It reports mean/median/p95 latency, standard deviation, real-time
+factor, and audio throughput. Use `--json` for machine-readable output, or
+inspect all options with:
+
+```bash
+zig build bench-libwhisper -- --help
+```
 
 The flake exposes `libwhisper`, `libwhisper-debug`, `libwhisper-releasesafe`, and
 `libwhisper-releasefast` on Darwin and Linux; `libwhisper` is an alias for the
