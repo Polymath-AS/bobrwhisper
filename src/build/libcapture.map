@@ -1,0 +1,6 @@
+LIBBOBRWHISPER_CAPTURE_0.1 {
+    global:
+        bobrwhisper_capture_*;
+    local:
+        *;
+};

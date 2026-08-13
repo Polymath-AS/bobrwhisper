@@ -13,6 +13,9 @@
 const std = @import("std");
 const capture = @import("main.zig");
 
+/// This host has a real backend.
+pub const supported = true;
+
 const c = struct {
     pub const SndPcm = opaque {};
     pub const SND_PCM_STREAM_CAPTURE: c_int = 1;

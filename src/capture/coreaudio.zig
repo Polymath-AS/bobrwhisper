@@ -19,6 +19,9 @@ const std = @import("std");
 const audio = @import("audio");
 const capture = @import("main.zig");
 
+/// This host has a real backend.
+pub const supported = true;
+
 const c = struct {
     pub const OSStatus = i32;
     pub const UInt32 = u32;

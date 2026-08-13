@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) !void {
     const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
     const libaudio_step = b.step("libaudio", "Build and install the standalone audio processing C library");
+    const libcapture_step = b.step("libcapture", "Build and install the standalone capture C library");
 
     // Public Zig module for dependency consumers. It carries the whisper bridge
     // and its link dependencies, so importing it is sufficient — a bare module
@@ -161,6 +162,38 @@ pub fn build(b: *std.Build) !void {
     const capture_tests = b.addTest(.{ .root_module = capture_module });
     test_capture_step.dependOn(&b.addRunArtifact(capture_tests).step);
     test_step.dependOn(&b.addRunArtifact(capture_tests).step);
+
+    // And its C ABI.
+    const libcapture = try buildpkg.LibCapture.init(b, capture_module, config.target, config.optimize);
+    libcapture.install(b, libcapture_step);
+
+    const libcapture_abi_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/lib_capture.zig"),
+            .target = config.target,
+            .optimize = config.optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "capture", .module = capture_module }},
+        }),
+    });
+    test_capture_step.dependOn(&b.addRunArtifact(libcapture_abi_tests).step);
+    test_step.dependOn(&b.addRunArtifact(libcapture_abi_tests).step);
+
+    const capture_smoke = libcapture.addCExample(
+        b,
+        config.target,
+        config.optimize,
+        "examples/capture-smoke/main.c",
+        "bobrwhisper-capture-smoke",
+    );
+    const run_capture_smoke = b.addRunArtifact(capture_smoke);
+    // .inherit rather than an exit-code check: the check variant also inspects
+    // stderr, and the ALSA library logs there on a machine with no capture
+    // device, which is not a failure of ours. .inherit still fails the step on a
+    // non-zero exit, which is the signal that matters.
+    run_capture_smoke.stdio = .inherit;
+    test_capture_step.dependOn(&run_capture_smoke.step);
+    test_step.dependOn(&run_capture_smoke.step);
 
     // Its C ABI, installed as libbobrwhisper-audio with a header under
     // include/bobrwhisper/, following ghostty's include/ghostty/vt.h layout.

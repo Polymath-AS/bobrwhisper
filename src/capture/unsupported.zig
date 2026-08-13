@@ -8,6 +8,9 @@
 const std = @import("std");
 const capture = @import("main.zig");
 
+/// No backend for this host.
+pub const supported = false;
+
 pub fn open(
     allocator: std.mem.Allocator,
     options: capture.Options,
