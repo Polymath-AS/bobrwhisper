@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <libwhisper.h>
@@ -127,6 +128,40 @@ static void test_null_tolerance(void) {
           "NULL transcriber was accepted by set_initial_prompt");
 }
 
+/*
+ * Everything above reaches libwhisper_create only on paths that fail before
+ * whisper.cpp is entered, which left a real gap: a ReleaseSafe build used to
+ * trap inside ggml the moment a model was actually loaded, and every check here
+ * still passed. Set LIBWHISPER_TEST_MODEL to a model file to cover it.
+ */
+static void test_real_model(const char *model_path) {
+    libwhisper_config_s config;
+    libwhisper_config_init(&config);
+    config.model_path = model_path;
+    config.use_gpu = false;
+
+    libwhisper_t *transcriber = NULL;
+    const libwhisper_error_e create_error = libwhisper_create(&config, &transcriber);
+    CHECK(create_error == LIBWHISPER_SUCCESS, "libwhisper_create(%s) failed: %s", model_path,
+          libwhisper_error_string(create_error));
+    if (create_error != LIBWHISPER_SUCCESS) return;
+
+    /* One second of silence: enough to build and run a ggml graph. */
+    static float samples[16000];
+    libwhisper_string_s text;
+    const libwhisper_error_e error =
+        libwhisper_transcribe(transcriber, samples, sizeof(samples) / sizeof(samples[0]), NULL, &text);
+    CHECK(error == LIBWHISPER_SUCCESS, "libwhisper_transcribe failed: %s",
+          libwhisper_error_string(error));
+    if (error == LIBWHISPER_SUCCESS) {
+        /* NULL means an empty transcript; otherwise it must be NUL-terminated. */
+        CHECK(text.ptr == NULL || text.ptr[text.len] == '\0',
+              "transcript is not NUL-terminated at len");
+        libwhisper_string_free(text);
+    }
+    libwhisper_destroy(transcriber);
+}
+
 int main(void) {
     /* Installed first so the failing-create tests below double as proof that
      * diagnostics reach the handler instead of the embedder's stderr. This can
@@ -142,6 +177,14 @@ int main(void) {
     test_null_tolerance();
 
     CHECK(log_calls > 0, "a failing libwhisper_create logged nothing to the handler");
+
+    const char *model_path = getenv("LIBWHISPER_TEST_MODEL");
+    if (model_path != NULL && model_path[0] != '\0') {
+        test_real_model(model_path);
+    } else {
+        printf("note: set LIBWHISPER_TEST_MODEL to also load a model and transcribe\n");
+    }
+
     libwhisper_set_log_handler(NULL, NULL);
 
     if (failures != 0) {
