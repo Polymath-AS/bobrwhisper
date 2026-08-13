@@ -9,6 +9,7 @@ zig build              # Build library + CLI
 zig build run          # Build and run macOS app
 zig build run-cli      # Run CLI
 zig build test         # Run tests
+zig build bench-simd   # Scalar vs. vector timings for the audio helpers
 zig build xcframework  # Build XCFramework for macOS
 zig build xcframework-ios  # Build XCFramework for iOS
 zig build macos        # Build macOS app via Xcode
@@ -35,6 +36,7 @@ zig build ios          # Build iOS app via Xcode
 - `src/App.zig` - Core application state
 - `src/Transcriber.zig` - Whisper.cpp wrapper
 - `src/audio/AudioCapture.zig` - CoreAudio recording
+- `src/simd.zig` - Vectorized sample loops (RMS, peak, gain, i16 conversion)
 - `src/cli.zig` - CLI tool with live transcription
 - `src/build/whisper.zig` - Builds whisper.cpp from source
 - `src/build/llama.zig` - Builds llama.cpp from source
