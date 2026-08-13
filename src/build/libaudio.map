@@ -1,0 +1,6 @@
+LIBBOBRWHISPER_AUDIO_0.1 {
+    global:
+        bobrwhisper_audio_*;
+    local:
+        *;
+};

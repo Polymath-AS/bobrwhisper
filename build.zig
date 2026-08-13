@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) !void {
     const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
     const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
+    const libaudio_step = b.step("libaudio", "Build and install the standalone audio processing C library");
 
     // Public Zig module for dependency consumers. It carries the whisper bridge
     // and its link dependencies, so importing it is sufficient — a bare module
@@ -140,6 +141,37 @@ pub fn build(b: *std.Build) !void {
     const audio_tests = b.addTest(.{ .root_module = audio_module });
     test_audio_step.dependOn(&b.addRunArtifact(audio_tests).step);
     test_step.dependOn(&b.addRunArtifact(audio_tests).step);
+
+    // Its C ABI, installed as libbobrwhisper-audio with a header under
+    // include/bobrwhisper/, following ghostty's include/ghostty/vt.h layout.
+    const libaudio = buildpkg.LibAudio.init(b, audio_module, config.target, config.optimize);
+    libaudio.install(b, libaudio_step);
+
+    const libaudio_c_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/lib_audio.zig"),
+            .target = config.target,
+            .optimize = config.optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "audio", .module = audio_module }},
+        }),
+    });
+    test_audio_step.dependOn(&b.addRunArtifact(libaudio_c_tests).step);
+    test_step.dependOn(&b.addRunArtifact(libaudio_c_tests).step);
+
+    // And from actual C, which is the only thing that checks the header is valid
+    // C and that the struct layouts agree.
+    const audio_smoke = libaudio.addCExample(
+        b,
+        config.target,
+        config.optimize,
+        "examples/audio-smoke/main.c",
+        "bobrwhisper-audio-smoke",
+    );
+    const run_audio_smoke = b.addRunArtifact(audio_smoke);
+    run_audio_smoke.expectExitCode(0);
+    test_audio_step.dependOn(&run_audio_smoke.step);
+    test_step.dependOn(&run_audio_smoke.step);
 
     // Scalar-vs-vector timings for the audio SIMD helpers. It links nothing —
     // no whisper, no ggml, no libc — so it stays runnable on any host, and it is
