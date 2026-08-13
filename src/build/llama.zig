@@ -128,7 +128,15 @@ pub fn buildGgml(
     });
     ggml.root_module.addCSourceFiles(.{
         .root = llama_dep.path("ggml/src"),
-        .files = &.{ "ggml-backend.cpp", "ggml-backend-reg.cpp", "ggml-opt.cpp", "ggml-threading.cpp", "gguf.cpp", "ggml-backend-dl.cpp" },
+        .files = &.{
+            "ggml-backend.cpp",
+            "ggml-backend-reg.cpp",
+            "ggml-backend-meta.cpp",
+            "ggml-opt.cpp",
+            "ggml-threading.cpp",
+            "gguf.cpp",
+            "ggml-backend-dl.cpp",
+        },
         .flags = cpp_flags,
     });
 

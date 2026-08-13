@@ -5,13 +5,17 @@
     .minimum_zig_version = "0.16.0",
 
     .dependencies = .{
+        // whisper.cpp v1.9.2. Keep nix/deps.nix in step; the `dep-pins` flake
+        // check fails if the rev or hash here is not mirrored there.
         .whisper = .{
-            .url = "git+https://github.com/ggml-org/whisper.cpp#941bdabbe4561bc6de68981aea01bc5ab05781c5",
-            .hash = "N-V-__8AAOZW0gHObmNEfr6yNdj1vYHEp_QdWYYTCkpmDGxk",
+            .url = "git+https://github.com/ggml-org/whisper.cpp#306c88f4d1286aec1bf96e544632897886af5501",
+            .hash = "N-V-__8AAKtFZQKKnEaIgq64slwmJVLwca5fkteZI0LoU8mu",
         },
+        // llama.cpp b10405. Only ggml is used for transcription; the llama
+        // library itself is for the app's LLM formatting.
         .llama = .{
-            .url = "git+https://github.com/ggml-org/llama.cpp#b828e18c75137e29fbfd3f3daa38281172d6a636",
-            .hash = "N-V-__8AACHBrgf72Ho6yyKd9uE9m1LZjfTqNX64koIcguF8",
+            .url = "git+https://github.com/ggml-org/llama.cpp#e79e4bf660e19f2ad851e06c6913f7a8c5852621",
+            .hash = "N-V-__8AAOuNCQq9rWVHqDNhLl3CMV63XKzbv4P3Iq6eDN3V",
         },
     },
 
