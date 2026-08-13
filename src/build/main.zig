@@ -3,6 +3,7 @@ pub const AsrBuild = @import("AsrBuild.zig");
 pub const Config = @import("Config.zig");
 pub const SharedDeps = @import("SharedDeps.zig");
 pub const BobrWhisperLib = @import("BobrWhisperLib.zig");
+pub const LibWhisper = @import("LibWhisper.zig");
 pub const BobrWhisperCLI = @import("BobrWhisperCLI.zig");
 pub const BobrWhisperXCFramework = @import("BobrWhisperXCFramework.zig");
 pub const BobrWhisperXcodebuild = @import("BobrWhisperXcodebuild.zig");

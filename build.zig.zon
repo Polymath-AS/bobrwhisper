@@ -21,5 +21,8 @@
         "pkg",
         "src",
         "include",
+        // Needed by `zig build test-libwhisper`, which links a C translation
+        // unit against the library to check the ABI.
+        "examples",
     },
 }

@@ -81,6 +81,30 @@ pub fn link(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Com
     compile.root_module.linkSystemLibrary("c++", .{});
 }
 
+/// Link only the dependencies required by libwhisper. In particular, this
+/// excludes app storage (sqlite) and macOS audio capture frameworks.
+pub fn linkWhisper(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Compile) !void {
+    if (self.target.result.os.tag.isDarwin()) try AppleSdk.addPaths(b, compile);
+    self.linkWhisperModule(compile.root_module);
+}
+
+/// Module-level variant for `b.addModule` exports, which have no Compile step.
+/// Apple SDK paths are omitted because `AppleSdk.addPaths` needs one; a Darwin
+/// consumer of the public Zig module supplies them for its own artifact.
+pub fn linkWhisperModule(self: *const SharedDeps, module: *std.Build.Module) void {
+    module.linkLibrary(self.whisper.lib);
+    module.addIncludePath(self.whisper.include_path);
+    if (self.target.result.os.tag.isDarwin()) {
+        module.linkFramework("Foundation", .{});
+        module.linkFramework("CoreFoundation", .{});
+        module.linkFramework("Accelerate", .{});
+        module.linkFramework("Metal", .{});
+        module.linkFramework("MetalKit", .{});
+    }
+    module.linkSystemLibrary("c", .{});
+    module.linkSystemLibrary("c++", .{});
+}
+
 fn linkAppleFrameworks(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) !void {
     const os_tag = target.result.os.tag;
     if (os_tag == .macos or os_tag == .ios) {
