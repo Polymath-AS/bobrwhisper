@@ -50,6 +50,41 @@ zig build
 ./zig-out/bin/bobrwhisper-cli languages   # Show supported languages
 ```
 
+## Libraries
+
+Three concerns, three libraries, all first-party code under `src/` — the app is a
+consumer of them too, so they live next to everything else that builds them
+rather than in a separate tree. Each has a C ABI root at `src/lib_*.zig` and a
+header under `include/bobrwhisper/`, following ghostty's `src/lib_vt.zig` and
+`include/ghostty/vt.h`.
+
+| library | what it is | dependencies |
+|---|---|---|
+| `libbobrwhisper-audio` | WAV decode, resample, downmix, level, VAD, chunking | none |
+| `libbobrwhisper-capture` | microphone capture (CoreAudio, ALSA) | audio |
+| `libbobrwhisper` | Whisper transcription (see below) | whisper.cpp + ggml |
+
+The graph is shallow on purpose. **audio** depends on nothing, which makes it the
+easiest thing to work on: `zig build test-audio` needs no model, no microphone
+and no Apple toolchain. **capture** depends on audio for format conversion.
+**libwhisper** depends on neither — it takes 16 kHz mono float PCM and nothing
+else, which is what keeps it embeddable by callers who already have audio in that
+form.
+
+```bash
+zig build libaudio      # or libcapture, or libwhisper
+zig build test-audio    # or test-capture, or test-libwhisper
+```
+
+Capture is polled rather than callback-driven: a backend fills a fixed-size ring
+and you drain it with `bobrwhisper_capture_read` when convenient. A callback
+would run on the audio thread, where an embedder that blocks or allocates causes
+dropouts, and across a C ABI there is no way to stop one. Falling behind costs
+the oldest audio, reported by `bobrwhisper_capture_dropped_samples`, rather than
+glitching the recording. Hosts without a backend — Windows for now — link and
+load, and report `UNSUPPORTED_PLATFORM`; check `bobrwhisper_capture_is_supported`
+up front.
+
 ## libwhisper
 
 `libwhisper` is the UI-independent transcription core for C and Zig consumers.
