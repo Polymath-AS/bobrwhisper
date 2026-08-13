@@ -34,9 +34,15 @@ pub fn initForTarget(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !?SharedDeps {
-    // Force ReleaseFast for C/C++ deps - Xcode Debug enables UBSan which requires
-    // linking the sanitizer runtime. Zig code can still use Debug mode.
-    const c_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
+    // Force ReleaseFast for the C/C++ deps in every mode that turns on Zig's
+    // undefined-behaviour checks. ggml does pointer arithmetic those checks
+    // reject — a ReleaseSafe build traps in ggml_graph_nbytes the moment a model
+    // is loaded, and Debug additionally wants the sanitizer runtime linked. Zig
+    // code keeps the requested mode, which is the part worth checking anyway.
+    const c_optimize: std.builtin.OptimizeMode = switch (optimize) {
+        .Debug, .ReleaseSafe => .ReleaseFast,
+        .ReleaseFast, .ReleaseSmall => optimize,
+    };
 
     const ggml = try llama_build.buildGgml(b, target, c_optimize) orelse return null;
     const llama = try llama_build.buildWithGgml(b, target, c_optimize, ggml) orelse return null;
