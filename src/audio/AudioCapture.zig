@@ -158,7 +158,7 @@ device_name: ?[]const u8 = null,
 // CoreAudio handles (macOS only)
 audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
     if (builtin.os.tag == .macos) null else {},
-linux_pcm: if (builtin.os.tag == .linux) ?c.SndPcm else void =
+linux_pcm: if (builtin.os.tag == .linux) ?*c.SndPcm else void =
     if (builtin.os.tag == .linux) null else {},
 linux_thread: if (builtin.os.tag == .linux) ?std.Thread else void =
     if (builtin.os.tag == .linux) null else {},
