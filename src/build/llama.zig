@@ -303,10 +303,16 @@ pub fn buildWithGgml(
     llama_lib.root_module.addIncludePath(llama_dep.path("ggml/include"));
     llama_lib.root_module.addIncludePath(llama_dep.path("ggml/src"));
 
+    // LLAMA_VERSION is required: llama_version() returns it directly, so without
+    // the define the library does not compile. Upstream's build derives it from
+    // git describe; nothing here surfaces llama_version(), so a placeholder is
+    // honest rather than a fabricated version number. Same reasoning as the
+    // GGML_VERSION/GGML_COMMIT placeholders above.
     const llama_flags = if (has_metal) &[_][]const u8{
         "-std=c++17",
         "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
+        "-DLLAMA_VERSION=\"unknown\"",
         "-DGGML_USE_METAL",
         "-DGGML_USE_BLAS",
         "-DGGML_USE_CPU",
@@ -315,22 +321,19 @@ pub fn buildWithGgml(
         "-std=c++17",
         "-fvisibility=hidden",
         "-D_GNU_SOURCE",
+        "-DLLAMA_VERSION=\"unknown\"",
         "-DGGML_USE_CPU",
     };
 
+    // llama.cpp reorganizes src/ and especially src/models/ freely between
+    // releases: b10405 renamed llama-sampling.cpp to llama-sampler.cpp, dropped
+    // the whole `-iswa` model family and added a dozen models. A hardcoded list
+    // therefore breaks on every bump, and breaks late — at the C compiler rather
+    // than at configure time. Compile whatever is actually present, which is
+    // what upstream's own build does.
     llama_lib.root_module.addCSourceFiles(.{
         .root = llama_dep.path("src"),
-        .files = &.{
-            "llama.cpp",               "llama-adapter.cpp",            "llama-arch.cpp",
-            "llama-batch.cpp",         "llama-chat.cpp",               "llama-context.cpp",
-            "llama-cparams.cpp",       "llama-grammar.cpp",            "llama-graph.cpp",
-            "llama-hparams.cpp",       "llama-impl.cpp",               "llama-io.cpp",
-            "llama-kv-cache.cpp",      "llama-kv-cache-iswa.cpp",      "llama-memory.cpp",
-            "llama-memory-hybrid.cpp", "llama-memory-hybrid-iswa.cpp", "llama-memory-recurrent.cpp",
-            "llama-mmap.cpp",          "llama-model.cpp",              "llama-model-loader.cpp",
-            "llama-model-saver.cpp",   "llama-quant.cpp",              "llama-sampling.cpp",
-            "llama-vocab.cpp",         "unicode.cpp",                  "unicode-data.cpp",
-        },
+        .files = try cppSourcesIn(b, llama_dep, "src"),
         .flags = llama_flags,
     });
 
@@ -338,37 +341,9 @@ pub fn buildWithGgml(
     llama_lib.root_module.addIncludePath(llama_dep.path("src/models"));
     llama_lib.root_module.addCSourceFiles(.{
         .root = llama_dep.path("src/models"),
-        .files = &.{
-            "afmoe.cpp",           "apertus.cpp",             "arcee.cpp",            "arctic.cpp",
-            "arwkv7.cpp",          "baichuan.cpp",            "bailingmoe.cpp",       "bailingmoe2.cpp",
-            "bert.cpp",            "bitnet.cpp",              "bloom.cpp",            "chameleon.cpp",
-            "chatglm.cpp",         "codeshell.cpp",           "cogvlm.cpp",           "cohere2-iswa.cpp",
-            "command-r.cpp",       "dbrx.cpp",                "deci.cpp",             "deepseek.cpp",
-            "deepseek2.cpp",       "dots1.cpp",               "dream.cpp",            "ernie4-5-moe.cpp",
-            "ernie4-5.cpp",        "exaone-moe.cpp",          "exaone.cpp",           "exaone4.cpp",
-            "falcon-h1.cpp",       "falcon.cpp",              "gemma-embedding.cpp",  "gemma.cpp",
-            "gemma2-iswa.cpp",     "gemma3.cpp",              "gemma3n-iswa.cpp",     "glm4-moe.cpp",
-            "glm4.cpp",            "gpt2.cpp",                "gptneox.cpp",          "granite-hybrid.cpp",
-            "granite.cpp",         "graph-context-mamba.cpp", "grok.cpp",             "grovemoe.cpp",
-            "hunyuan-dense.cpp",   "hunyuan-moe.cpp",         "internlm2.cpp",        "jais.cpp",
-            "jamba.cpp",           "lfm2.cpp",                "llada-moe.cpp",        "llada.cpp",
-            "llama-iswa.cpp",      "llama.cpp",               "maincoder.cpp",        "mamba.cpp",
-            "mimo2-iswa.cpp",      "minicpm3.cpp",            "minimax-m2.cpp",       "mistral3.cpp",
-            "modern-bert.cpp",     "mpt.cpp",                 "nemotron-h.cpp",       "nemotron.cpp",
-            "neo-bert.cpp",        "olmo.cpp",                "olmo2.cpp",            "olmoe.cpp",
-            "openai-moe-iswa.cpp", "openelm.cpp",             "orion.cpp",            "pangu-embedded.cpp",
-            "phi2.cpp",            "phi3.cpp",                "plamo.cpp",            "plamo2.cpp",
-            "plamo3.cpp",          "plm.cpp",                 "qwen.cpp",             "qwen2.cpp",
-            "qwen2moe.cpp",        "qwen2vl.cpp",             "qwen3.cpp",            "qwen3moe.cpp",
-            "qwen3next.cpp",       "qwen3vl-moe.cpp",         "qwen3vl.cpp",          "refact.cpp",
-            "rnd1.cpp",            "rwkv6-base.cpp",          "rwkv6.cpp",            "rwkv6qwen2.cpp",
-            "rwkv7-base.cpp",      "rwkv7.cpp",               "seed-oss.cpp",         "smallthinker.cpp",
-            "smollm3.cpp",         "stablelm.cpp",            "starcoder.cpp",        "starcoder2.cpp",
-            "t5-dec.cpp",          "t5-enc.cpp",              "wavtokenizer-dec.cpp", "xverse.cpp",
-        },
+        .files = try cppSourcesIn(b, llama_dep, "src/models"),
         .flags = llama_flags,
     });
-
     llama_lib.root_module.linkLibrary(ggml);
 
     if (target.result.os.tag.isDarwin()) {
@@ -381,6 +356,34 @@ pub fn buildWithGgml(
         .include_path = llama_dep.path("include"),
         .ggml_include_path = llama_dep.path("ggml/include"),
     };
+}
+
+/// Every `.cpp` directly inside `sub_path` of a fetched dependency. Sorted, so
+/// the build hash does not depend on directory iteration order. Subdirectories
+/// are skipped: callers list them separately when they need different flags.
+fn cppSourcesIn(
+    b: *std.Build,
+    dep: *std.Build.Dependency,
+    sub_path: []const u8,
+) ![]const []const u8 {
+    const io = b.graph.io;
+    var dir = try dep.builder.build_root.handle.openDir(io, sub_path, .{ .iterate = true });
+    defer dir.close(io);
+
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".cpp")) continue;
+        try files.append(b.graph.arena, b.dupe(entry.name));
+    }
+
+    std.mem.sort([]const u8, files.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, c: []const u8) bool {
+            return std.mem.order(u8, a, c) == .lt;
+        }
+    }.lessThan);
+    return files.items;
 }
 
 pub fn link(compile: *std.Build.Step.Compile, llama: LlamaLib) void {
