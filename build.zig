@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const buildpkg = @import("src/build/main.zig");
 
 pub fn build(b: *std.Build) !void {
@@ -26,20 +27,37 @@ pub fn build(b: *std.Build) !void {
     cli.install(b);
     run_cli_step.dependOn(&cli.addRunStep(b).step);
 
-    // XCFrameworks
-    const macos_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .macos);
-    xcframework_step.dependOn(macos_xcframework.step);
+    // Apple application artifacts are not even initialized on other hosts.
+    // This keeps the standalone library build free of Xcode/Swift SDK probes.
+    if (builtin.os.tag == .macos) {
+        const macos_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .macos);
+        xcframework_step.dependOn(macos_xcframework.step);
 
-    const ios_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .ios);
-    xcframework_ios_step.dependOn(ios_xcframework.step);
+        const ios_xcframework = try buildpkg.BobrWhisperXCFramework.init(b, &config, .ios);
+        xcframework_ios_step.dependOn(ios_xcframework.step);
 
-    // Xcode builds
-    const macos_app = buildpkg.BobrWhisperXcodebuild.init(b, &config, &macos_xcframework, .macos);
-    macos_step.dependOn(macos_app.step);
-    run_step.dependOn(&buildpkg.BobrWhisperXcodebuild.addRunStep(b, &macos_app).step);
+        const macos_app = buildpkg.BobrWhisperXcodebuild.init(b, &config, &macos_xcframework, .macos);
+        macos_step.dependOn(macos_app.step);
+        run_step.dependOn(&buildpkg.BobrWhisperXcodebuild.addRunStep(b, &macos_app).step);
 
-    const ios_app = buildpkg.BobrWhisperXcodebuild.init(b, &config, &ios_xcframework, .ios);
-    ios_step.dependOn(ios_app.step);
+        const ios_app = buildpkg.BobrWhisperXcodebuild.init(b, &config, &ios_xcframework, .ios);
+        ios_step.dependOn(ios_app.step);
+    } else {
+        // Fail loudly instead of reporting success for a step that built
+        // nothing. These need Xcode and a Swift toolchain; libwhisper does not,
+        // which is why it is reachable on every host.
+        const unavailable = b.addFail(
+            "Apple app and XCFramework targets require a macOS host with Xcode. " ++
+                "Use `zig build libwhisper` for the host-independent C library.",
+        );
+        for ([_]*std.Build.Step{
+            xcframework_step,
+            xcframework_ios_step,
+            macos_step,
+            ios_step,
+            run_step,
+        }) |step| step.dependOn(&unavailable.step);
+    }
 
     // Tests
     const test_root_module = b.createModule(.{
