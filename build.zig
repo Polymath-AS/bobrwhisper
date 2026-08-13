@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run unit tests");
     const test_libwhisper_step = b.step("test-libwhisper", "Run standalone libwhisper tests");
     const test_audio_step = b.step("test-audio", "Run audio processing library tests (no model or device needed)");
+    const test_capture_step = b.step("test-capture", "Run capture library tests (no device needed)");
     const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
     const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
@@ -141,6 +142,25 @@ pub fn build(b: *std.Build) !void {
     const audio_tests = b.addTest(.{ .root_module = audio_module });
     test_audio_step.dependOn(&b.addRunArtifact(audio_tests).step);
     test_step.dependOn(&b.addRunArtifact(audio_tests).step);
+
+    // Capture library. Depends on the audio library for format conversion and on
+    // nothing else; the ASR library is not involved in either direction. Links
+    // the platform audio API, so unlike the audio library it is not dependency
+    // free — but the backend for an unsupported host reports a runtime error
+    // rather than failing to build.
+    const capture_module = b.addModule("bobrwhisper-capture", .{
+        .root_source_file = b.path("src/capture/main.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
+        .link_libc = true,
+        .imports = &.{.{ .name = "audio", .module = audio_module }},
+    });
+    if (config.target.result.os.tag == .linux) {
+        capture_module.linkSystemLibrary("asound", .{});
+    }
+    const capture_tests = b.addTest(.{ .root_module = capture_module });
+    test_capture_step.dependOn(&b.addRunArtifact(capture_tests).step);
+    test_step.dependOn(&b.addRunArtifact(capture_tests).step);
 
     // Its C ABI, installed as libbobrwhisper-audio with a header under
     // include/bobrwhisper/, following ghostty's include/ghostty/vt.h layout.
