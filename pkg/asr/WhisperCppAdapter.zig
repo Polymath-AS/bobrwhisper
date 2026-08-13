@@ -29,12 +29,17 @@ vad_speech_pad_ms: i32,
 // `setInitialPrompt`. Whisper.cpp accepts up to ~224 prompt tokens; callers
 // are responsible for staying under that bound (see DictionaryStore).
 initial_prompt: ?[:0]u8 = null,
+// Optional cooperative cancellation flag, polled by whisper.cpp between compute
+// steps. Owned by whoever set it; must outlive any transcribe call. Left null by
+// the app, which has no cancel affordance; libwhisper points it at its handle.
+cancel_flag: ?*const bool = null,
 
 pub const Config = struct {
     model_path: []const u8,
     language: []const u8 = "en",
     n_threads: u32 = 4,
     translate: bool = false,
+    use_gpu: ?bool = null,
     // VAD
     vad_enabled: bool = true,
     vad_model_path: ?[]const u8 = null,
@@ -66,12 +71,17 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !WhisperCppAdapter {
     const model_path_z = try allocator.dupeZ(u8, config.model_path);
     defer allocator.free(model_path_z);
 
-    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), model_path_z, .{}) catch |err| {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const model_access = if (std.fs.path.isAbsolute(model_path_z))
+        std.Io.Dir.accessAbsolute(io, model_path_z, .{})
+    else
+        std.Io.Dir.cwd().access(io, model_path_z, .{});
+    model_access catch |err| {
         std.log.err("Model file not found: {s} - {}", .{ model_path_z, err });
         return error.ModelNotFound;
     };
 
-    const ctx = bridge.bobrwhisper_whisper_init(model_path_z.ptr, shouldUseGpu());
+    const ctx = bridge.bobrwhisper_whisper_init(model_path_z.ptr, config.use_gpu orelse shouldUseGpu());
     if (ctx == null) {
         std.log.err("Failed to initialize whisper context", .{});
         return error.WhisperInitFailed;
@@ -196,6 +206,7 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         self.vad_min_silence_ms,
         self.vad_speech_pad_ms,
         if (self.initial_prompt) |p| p.ptr else null,
+        self.cancel_flag,
     );
     if (result != 0) {
         std.log.err("whisper_full failed: {}", .{result});

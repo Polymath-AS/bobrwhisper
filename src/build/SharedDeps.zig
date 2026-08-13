@@ -15,6 +15,7 @@ pub const MetalResources = struct {
 config: *const Config,
 target: std.Build.ResolvedTarget,
 optimize: std.builtin.OptimizeMode,
+ggml: llama_build.GgmlLib,
 llama: llama_build.LlamaLib,
 whisper: whisper_build.WhisperLib,
 metal_resources: ?MetalResources,
@@ -33,8 +34,9 @@ pub fn initForTarget(
     // linking the sanitizer runtime. Zig code can still use Debug mode.
     const c_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
 
-    const llama = try llama_build.build(b, target, c_optimize);
-    const whisper = try whisper_build.build(b, target, c_optimize, llama);
+    const ggml = try llama_build.buildGgml(b, target, c_optimize);
+    const llama = try llama_build.buildWithGgml(b, target, c_optimize, ggml);
+    const whisper = try whisper_build.build(b, target, c_optimize, ggml);
 
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const metal_resources: ?MetalResources = if (is_darwin) blk: {
@@ -50,6 +52,7 @@ pub fn initForTarget(
         .config = config,
         .target = target,
         .optimize = optimize,
+        .ggml = ggml,
         .llama = llama,
         .whisper = whisper,
         .metal_resources = metal_resources,
@@ -76,6 +79,30 @@ pub fn link(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Com
     compile.root_module.linkSystemLibrary("sqlite3", .{});
     compile.root_module.linkSystemLibrary("c", .{});
     compile.root_module.linkSystemLibrary("c++", .{});
+}
+
+/// Link only the dependencies required by libwhisper. In particular, this
+/// excludes app storage (sqlite) and macOS audio capture frameworks.
+pub fn linkWhisper(self: *const SharedDeps, b: *std.Build, compile: *std.Build.Step.Compile) !void {
+    if (self.target.result.os.tag.isDarwin()) try AppleSdk.addPaths(b, compile);
+    self.linkWhisperModule(compile.root_module);
+}
+
+/// Module-level variant for `b.addModule` exports, which have no Compile step.
+/// Apple SDK paths are omitted because `AppleSdk.addPaths` needs one; a Darwin
+/// consumer of the public Zig module supplies them for its own artifact.
+pub fn linkWhisperModule(self: *const SharedDeps, module: *std.Build.Module) void {
+    module.linkLibrary(self.whisper.lib);
+    module.addIncludePath(self.whisper.include_path);
+    if (self.target.result.os.tag.isDarwin()) {
+        module.linkFramework("Foundation", .{});
+        module.linkFramework("CoreFoundation", .{});
+        module.linkFramework("Accelerate", .{});
+        module.linkFramework("Metal", .{});
+        module.linkFramework("MetalKit", .{});
+    }
+    module.linkSystemLibrary("c", .{});
+    module.linkSystemLibrary("c++", .{});
 }
 
 fn linkAppleFrameworks(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) !void {

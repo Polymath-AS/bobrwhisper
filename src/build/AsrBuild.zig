@@ -25,18 +25,30 @@ pub fn addWhisperBridge(
     deps: *const SharedDeps,
     optimize: std.builtin.OptimizeMode,
 ) void {
-    compile.root_module.addCSourceFiles(.{
+    addWhisperBridgeToModule(b, compile.root_module, deps, optimize);
+}
+
+/// Module-level variant, needed for `b.addModule` exports: a public module has
+/// no Compile step of its own, but must still carry the bridge or every
+/// consumer hits undefined `bobrwhisper_whisper_*` symbols.
+pub fn addWhisperBridgeToModule(
+    b: *std.Build,
+    module: *std.Build.Module,
+    deps: *const SharedDeps,
+    optimize: std.builtin.OptimizeMode,
+) void {
+    module.addCSourceFiles(.{
         .root = b.path("pkg/asr"),
         .files = &.{"whisper_bridge.c"},
         .flags = bridgeFlags(optimize),
     });
-    compile.root_module.addIncludePath(deps.whisper.include_path);
-    compile.root_module.addIncludePath(deps.llama.ggml_include_path);
+    module.addIncludePath(deps.whisper.include_path);
+    module.addIncludePath(deps.llama.ggml_include_path);
 }
 
 fn bridgeFlags(optimize: std.builtin.OptimizeMode) []const []const u8 {
     return if (optimize == .Debug)
-        &.{ "-O2", "-fno-sanitize=undefined" }
+        &.{ "-O2", "-fno-sanitize=undefined", "-fvisibility=hidden" }
     else
-        &.{};
+        &.{"-fvisibility=hidden"};
 }

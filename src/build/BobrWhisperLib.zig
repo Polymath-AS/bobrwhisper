@@ -1,7 +1,7 @@
 const std = @import("std");
 const AsrBuild = @import("AsrBuild.zig");
 const SharedDeps = @import("SharedDeps.zig");
-const LibtoolStep = @import("LibtoolStep.zig");
+const CombineArchivesStep = @import("CombineArchivesStep.zig");
 
 pub const BobrWhisperLib = @This();
 
@@ -53,8 +53,11 @@ pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
     try deps.link(b, lib);
     lib.bundle_compiler_rt = true;
 
-    const libtool = LibtoolStep.create(b, .{
+    // The LazyPaths below already establish the dependency on each producing
+    // step, so no explicit dependOn is needed.
+    const combined = CombineArchivesStep.create(b, .{
         .name = "bobrwhisper",
+        .ofmt = deps.target.result.ofmt,
         .sources = &.{
             lib.getEmittedBin(),
             deps.whisper.lib.getEmittedBin(),
@@ -62,11 +65,10 @@ pub fn initStatic(b: *std.Build, deps: *const SharedDeps) !BobrWhisperLib {
             deps.llama.ggml.getEmittedBin(),
         },
     });
-    libtool.step.dependOn(&lib.step);
 
     return .{
-        .step = libtool.step,
-        .output = libtool.output,
+        .step = combined.step,
+        .output = combined.output,
     };
 }
 

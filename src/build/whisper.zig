@@ -11,14 +11,16 @@ pub fn build(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    llama: llama_build.LlamaLib,
+    ggml: llama_build.GgmlLib,
 ) !WhisperLib {
     const whisper_dep = b.dependency("whisper", .{});
     const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
     const has_metal = target.result.os.tag.isDarwin() and !is_ios_simulator;
 
     const whisper_lib = b.addLibrary(.{
-        .name = "whisper",
+        // Keep the vendored implementation distinct from the public
+        // libwhisper artifact produced by this repository.
+        .name = "whisper-cpp",
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
@@ -29,11 +31,11 @@ pub fn build(
 
     whisper_lib.root_module.addIncludePath(whisper_dep.path("include"));
     whisper_lib.root_module.addIncludePath(whisper_dep.path("src"));
-    whisper_lib.root_module.addIncludePath(llama.ggml_include_path);
+    whisper_lib.root_module.addIncludePath(ggml.include_path);
 
     var flags = std.ArrayListUnmanaged([]const u8).empty;
     defer flags.deinit(b.graph.arena);
-    try flags.append(b.graph.arena, "-std=c++17");
+    try flags.appendSlice(b.graph.arena, &.{ "-std=c++17", "-fvisibility=hidden" });
     if (target.result.os.tag.isDarwin()) {
         try flags.append(b.graph.arena, "-D_DARWIN_C_SOURCE");
     }
@@ -52,7 +54,7 @@ pub fn build(
             "-DGGML_USE_ACCELERATE",
         });
     } else {
-        try flags.append(b.graph.arena, "-DGGML_USE_CPU");
+        try flags.appendSlice(b.graph.arena, &.{ "-D_GNU_SOURCE", "-DGGML_USE_CPU" });
     }
     try flags.append(b.graph.arena, "-DWHISPER_VERSION=\"1.0.0\"");
 
@@ -62,7 +64,7 @@ pub fn build(
         .flags = flags.items,
     });
 
-    whisper_lib.root_module.linkLibrary(llama.lib);
+    whisper_lib.root_module.linkLibrary(ggml.lib);
 
     if (target.result.os.tag.isDarwin()) {
         try AppleSdk.addPaths(b, whisper_lib);

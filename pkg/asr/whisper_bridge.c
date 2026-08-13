@@ -23,6 +23,13 @@ void bobrwhisper_whisper_free(struct whisper_context * ctx) {
     whisper_free(ctx);
 }
 
+// Polled by ggml between compute steps. The flag is written by another thread,
+// hence volatile: the value must be re-read on every call.
+static bool bobrwhisper_whisper_abort_callback(void * user_data) {
+    const volatile bool * abort_flag = (const volatile bool *) user_data;
+    return abort_flag != NULL && *abort_flag;
+}
+
 int bobrwhisper_whisper_transcribe(
     struct whisper_context * ctx,
     const float * samples,
@@ -36,7 +43,8 @@ int bobrwhisper_whisper_transcribe(
     int32_t vad_min_speech_ms,
     int32_t vad_min_silence_ms,
     int32_t vad_speech_pad_ms,
-    const char * initial_prompt
+    const char * initial_prompt,
+    const bool * abort_flag
 ) {
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.print_realtime = false;
@@ -69,6 +77,13 @@ int bobrwhisper_whisper_transcribe(
     // which it does because the Zig adapter holds it for the call duration.
     if (initial_prompt != NULL && initial_prompt[0] != '\0') {
         params.initial_prompt = initial_prompt;
+    }
+
+    // Optional cooperative cancellation. The pointer must outlive this call,
+    // which it does: callers keep the flag alongside the context.
+    if (abort_flag != NULL) {
+        params.abort_callback = bobrwhisper_whisper_abort_callback;
+        params.abort_callback_user_data = (void *) (uintptr_t) abort_flag;
     }
 
     return whisper_full(ctx, params, samples, sample_count);

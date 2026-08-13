@@ -1,0 +1,6 @@
+LIBWHISPER_0.1 {
+    global:
+        libwhisper_*;
+    local:
+        *;
+};
