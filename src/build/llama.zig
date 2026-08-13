@@ -8,11 +8,25 @@ pub const LlamaLib = struct {
     ggml_include_path: std.Build.LazyPath,
 };
 
+pub const GgmlLib = struct {
+    lib: *std.Build.Step.Compile,
+    include_path: std.Build.LazyPath,
+};
+
 pub fn build(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) !LlamaLib {
+    const ggml = try buildGgml(b, target, optimize);
+    return buildWithGgml(b, target, optimize, ggml);
+}
+
+pub fn buildGgml(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) !GgmlLib {
     const llama_dep = b.dependency("llama", .{});
 
     // ggml
@@ -34,6 +48,7 @@ pub fn build(
     const has_metal = is_darwin and !is_ios_simulator;
 
     const c_flags: []const []const u8 = if (has_metal) &.{
+        "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
@@ -43,12 +58,15 @@ pub fn build(
         "-DGGML_USE_BLAS",
         "-DGGML_USE_ACCELERATE",
     } else if (is_darwin) &.{
+        "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
         "-DGGML_COMMIT=\"unknown\"",
         "-DGGML_USE_CPU",
     } else &.{
+        "-fvisibility=hidden",
+        "-D_GNU_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
         "-DGGML_COMMIT=\"unknown\"",
@@ -68,6 +86,7 @@ pub fn build(
 
     const cpp_flags: []const []const u8 = if (has_metal) &.{
         "-std=c++17",
+        "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
@@ -78,6 +97,7 @@ pub fn build(
         "-DGGML_USE_ACCELERATE",
     } else if (is_darwin) &.{
         "-std=c++17",
+        "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
@@ -85,6 +105,8 @@ pub fn build(
         "-DGGML_USE_CPU",
     } else &.{
         "-std=c++17",
+        "-fvisibility=hidden",
+        "-D_GNU_SOURCE",
         "-D_XOPEN_SOURCE=600",
         "-DGGML_VERSION=0",
         "-DGGML_COMMIT=\"unknown\"",
@@ -137,9 +159,23 @@ pub fn build(
         });
     }
 
-    // x86 amx
+    // x86 amx. Unlike the arm branch above this omits `cpu-feats.cpp`: its only
+    // contents are wrapped in GGML_BACKEND_DL_SCORE_IMPL, which expands to
+    // nothing unless GGML_BACKEND_DL is defined, so it would be an empty
+    // translation unit here.
     if (target.result.cpu.arch == .x86_64) {
         ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/amx"));
+        ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-cpu/arch/x86"));
+        ggml.root_module.addCSourceFiles(.{
+            .root = llama_dep.path("ggml/src/ggml-cpu/arch/x86"),
+            .files = &.{"quants.c"},
+            .flags = c_flags,
+        });
+        ggml.root_module.addCSourceFiles(.{
+            .root = llama_dep.path("ggml/src/ggml-cpu/arch/x86"),
+            .files = &.{"repack.cpp"},
+            .flags = cpp_flags,
+        });
         ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-cpu/amx"),
             .files = &.{ "amx.cpp", "mmq.cpp" },
@@ -155,8 +191,8 @@ pub fn build(
     if (has_metal) {
         ggml.root_module.addIncludePath(llama_dep.path("ggml/src/ggml-metal"));
 
-        const metal_flags_cpp = &[_][]const u8{ "-std=c++17", "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY" };
-        const metal_flags_objc = &[_][]const u8{ "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY", "-fno-objc-arc" };
+        const metal_flags_cpp = &[_][]const u8{ "-std=c++17", "-fvisibility=hidden", "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY" };
+        const metal_flags_objc = &[_][]const u8{ "-fvisibility=hidden", "-DGGML_USE_METAL", "-DGGML_METAL_EMBED_LIBRARY", "-fno-objc-arc" };
 
         ggml.root_module.addCSourceFiles(.{
             .root = llama_dep.path("ggml/src/ggml-metal"),
@@ -217,6 +253,7 @@ pub fn build(
             .files = &.{"ggml-blas.cpp"},
             .flags = &.{
                 "-std=c++17",
+                "-fvisibility=hidden",
                 "-DGGML_USE_BLAS",
                 "-DGGML_BLAS_USE_ACCELERATE",
                 "-DACCELERATE_NEW_LAPACK",
@@ -228,6 +265,24 @@ pub fn build(
         // Accelerate framework path already added above via sdk_path
         ggml.root_module.linkFramework("Accelerate", .{});
     }
+
+    return .{
+        .lib = ggml,
+        .include_path = llama_dep.path("ggml/include"),
+    };
+}
+
+pub fn buildWithGgml(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    ggml_dep: GgmlLib,
+) !LlamaLib {
+    const llama_dep = b.dependency("llama", .{});
+    const ggml = ggml_dep.lib;
+    const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
+    const is_ios_simulator = target.result.os.tag == .ios and target.result.abi == .simulator;
+    const has_metal = is_darwin and !is_ios_simulator;
 
     // llama
     const llama_lib = b.addLibrary(.{
@@ -247,6 +302,7 @@ pub fn build(
 
     const llama_flags = if (has_metal) &[_][]const u8{
         "-std=c++17",
+        "-fvisibility=hidden",
         "-D_DARWIN_C_SOURCE",
         "-DGGML_USE_METAL",
         "-DGGML_USE_BLAS",
@@ -254,6 +310,8 @@ pub fn build(
         "-DGGML_USE_ACCELERATE",
     } else &[_][]const u8{
         "-std=c++17",
+        "-fvisibility=hidden",
+        "-D_GNU_SOURCE",
         "-DGGML_USE_CPU",
     };
 

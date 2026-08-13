@@ -15,6 +15,7 @@ pub const MetalResources = struct {
 config: *const Config,
 target: std.Build.ResolvedTarget,
 optimize: std.builtin.OptimizeMode,
+ggml: llama_build.GgmlLib,
 llama: llama_build.LlamaLib,
 whisper: whisper_build.WhisperLib,
 metal_resources: ?MetalResources,
@@ -33,8 +34,9 @@ pub fn initForTarget(
     // linking the sanitizer runtime. Zig code can still use Debug mode.
     const c_optimize: std.builtin.OptimizeMode = if (optimize == .Debug) .ReleaseFast else optimize;
 
-    const llama = try llama_build.build(b, target, c_optimize);
-    const whisper = try whisper_build.build(b, target, c_optimize, llama);
+    const ggml = try llama_build.buildGgml(b, target, c_optimize);
+    const llama = try llama_build.buildWithGgml(b, target, c_optimize, ggml);
+    const whisper = try whisper_build.build(b, target, c_optimize, ggml);
 
     const is_darwin = target.result.os.tag == .macos or target.result.os.tag == .ios;
     const metal_resources: ?MetalResources = if (is_darwin) blk: {
@@ -50,6 +52,7 @@ pub fn initForTarget(
         .config = config,
         .target = target,
         .optimize = optimize,
+        .ggml = ggml,
         .llama = llama,
         .whisper = whisper,
         .metal_resources = metal_resources,
