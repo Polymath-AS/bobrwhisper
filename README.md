@@ -50,6 +50,78 @@ zig build
 ./zig-out/bin/bobrwhisper-cli languages   # Show supported languages
 ```
 
+## libwhisper
+
+`libwhisper` is the UI-independent transcription core for C and Zig consumers.
+It loads a caller-provided whisper.cpp model and accepts caller-provided 16 kHz
+mono `float` PCM; it does not depend on Swift, audio capture, app settings, or
+LLM formatting.
+
+```bash
+# Installs shared/static libraries, the C header, and pkg-config metadata.
+zig build libwhisper -Doptimize=ReleaseFast
+
+# Zig unit tests plus a C ABI smoke test linked against the static archive.
+zig build test-libwhisper
+
+# Reproducible Nix package (Debug and ReleaseSafe variants are also exposed).
+nix build .#libwhisper
+```
+
+Installed outputs:
+
+- `lib/libbobrwhisper.{so,dylib}` and `lib/libbobrwhisper.a`
+- `include/libwhisper.h`
+- `share/pkgconfig/bobrwhisper.pc`
+
+The shared library needs nothing beyond libc and libm — Zig links libc++ into it
+statically. Linking the **static** archive additionally requires libc++
+(`pkg-config --static --libs bobrwhisper` reports `-lc++`); libstdc++ cannot
+substitute, because the archive references `std::__1::` symbols from libc++'s
+inline namespace.
+
+The file is named `libbobrwhisper` because whisper.cpp installs its own
+`libwhisper.so` with SONAME `libwhisper.so.0` and an unrelated ABI, so sharing
+the name would make the two unco-installable. The API keeps the `libwhisper_`
+prefix, which does not collide with whisper.cpp's `whisper_`.
+
+```c
+#include <libwhisper.h>
+
+libwhisper_config_s config;
+libwhisper_config_init(&config);
+config.model_path = "/path/to/ggml-base.en.bin";
+
+libwhisper_t *transcriber = NULL;
+if (libwhisper_create(&config, &transcriber) != LIBWHISPER_SUCCESS) return 1;
+
+libwhisper_string_s text;
+if (libwhisper_transcribe(transcriber, samples, sample_count, NULL, &text) == LIBWHISPER_SUCCESS) {
+    if (text.ptr != NULL) {   /* NULL means an empty transcript */
+        printf("%s\n", text.ptr);
+        libwhisper_string_free(text);
+    }
+}
+libwhisper_destroy(transcriber);
+```
+
+`examples/c-smoke/main.c` is the executable version of that contract, and runs
+as part of `zig build test-libwhisper`.
+
+The flake exposes `libwhisper`, `libwhisper-debug`, `libwhisper-releasesafe`, and
+`libwhisper-releasefast` on Darwin and Linux; `libwhisper` is an alias for the
+ReleaseFast variant. `nix flake check` builds the library, runs its tests, and
+verifies that `nix/deps.nix` has not drifted from `build.zig.zon`.
+
+As a Zig package dependency, import the `bobrwhisper` module; it carries the
+whisper.cpp bridge and its link dependencies, so no extra artifact wiring is
+needed:
+
+```zig
+const bobrwhisper = b.dependency("bobrwhisper", .{ .target = target, .optimize = optimize });
+exe.root_module.addImport("bobrwhisper", bobrwhisper.module("bobrwhisper"));
+```
+
 ## Code Signing Builds
 
 By default, Zig-driven Xcode builds keep iOS signing disabled for fast local iteration.
