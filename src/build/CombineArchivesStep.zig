@@ -24,31 +24,27 @@ pub fn create(b: *std.Build, options: Options) *CombineArchivesStep {
     const self = b.allocator.create(CombineArchivesStep) catch @panic("OOM");
     const run = std.Build.Step.Run.create(b, b.fmt("combine lib{s}.a", .{options.name}));
 
-    // Apple's `libtool -static` is the only tool that reliably produces the
-    // Mach-O archives ld64 and xcodebuild expect, and it is already required by
-    // the XCFramework path.
-    if (options.ofmt == .macho) {
-        run.addArgs(&.{ "libtool", "-static", "-o" });
-    } else {
-        // llvm-ar's MRI script mode is what expands input archives into the
-        // output instead of nesting them as members.
-        run.addArgs(&.{
-            "sh",
-            "-c",
-            \\set -eu
-            \\ar="$1"
-            \\output="$2"
-            \\shift 2
-            \\{
-            \\  printf 'CREATE %s\n' "$output"
-            \\  for archive do printf 'ADDLIB %s\n' "$archive"; done
-            \\  printf 'SAVE\nEND\n'
-            \\} | "$ar" ar -M
-            ,
-            "--",
-            b.graph.zig_exe,
-        });
-    }
+    // MRI mode expands input archives rather than nesting them. Use Zig's
+    // pinned LLVM archiver on every target: Apple libtool exits successfully
+    // while silently dropping valid Zig Mach-O members whose sections are not
+    // 8-byte aligned.
+    _ = options.ofmt;
+    run.addArgs(&.{
+        "sh",
+        "-c",
+        \\set -eu
+        \\ar="$1"
+        \\output="$2"
+        \\shift 2
+        \\{
+        \\  printf 'CREATE %s\n' "$output"
+        \\  for archive do printf 'ADDLIB %s\n' "$archive"; done
+        \\  printf 'SAVE\nEND\n'
+        \\} | "$ar" ar -M
+        ,
+        "--",
+        b.graph.zig_exe,
+    });
 
     const output = run.addOutputFileArg(b.fmt("lib{s}.a", .{options.name}));
     for (options.sources) |source| run.addFileArg(source);
