@@ -1,4 +1,4 @@
-//! Scalar-versus-vector timings for the loops in `src/simd.zig`.
+//! Scalar-versus-vector timings for the loops in `src/audio/simd.zig`.
 //!
 //! The scalar functions below are the originals those helpers replaced, kept
 //! verbatim so the comparison stays honest. The lane count — and therefore the

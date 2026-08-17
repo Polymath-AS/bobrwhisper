@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) !void {
     const test_capture_step = b.step("test-capture", "Run capture library tests (no device needed)");
     const bench_libwhisper_step = b.step("bench-libwhisper", "Benchmark the standalone libwhisper C API");
     const bench_simd_step = b.step("bench-simd", "Benchmark the vectorized audio helpers against their scalar originals");
+    const bench_downmix_step = b.step("bench-downmix-poop", "Install the fixed-workload downmix benchmark for comparison with poop");
     const libwhisper_step = b.step("libwhisper", "Build and install the standalone libwhisper C library");
     const libaudio_step = b.step("libaudio", "Build and install the standalone audio processing C library");
     const libcapture_step = b.step("libcapture", "Build and install the standalone capture C library");
@@ -248,6 +249,23 @@ pub fn build(b: *std.Build) !void {
     // Compile it under the regular test step so it cannot rot unnoticed. It is
     // not run there: a timing loop is not a pass/fail check.
     test_step.dependOn(&bench_simd.step);
+
+    // A quiet, fixed-workload executable intended for whole-process comparison:
+    // build the old and new revisions, preserve each binary, then run
+    // `poop old/downmix-bench new/downmix-bench`. Keeping measurement outside
+    // the process avoids the timer and warm-up pitfalls described in the SIMD
+    // article while also exposing memory and hardware-counter regressions.
+    const downmix_bench = b.addExecutable(.{
+        .name = "downmix-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/downmix-bench/main.zig"),
+            .target = config.target,
+            .optimize = .ReleaseFast,
+            .imports = &.{.{ .name = "audio", .module = audio_module }},
+        }),
+    });
+    bench_downmix_step.dependOn(&b.addInstallArtifact(downmix_bench, .{}).step);
+    test_step.dependOn(&downmix_bench.step);
 
     // Keep the benchmark on the public C boundary and link the exact combined
     // static archive that `zig build libwhisper` installs. Arguments after `--`

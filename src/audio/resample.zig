@@ -5,6 +5,7 @@
 //! and it is the reason an audio library exists separately from the ASR one.
 
 const std = @import("std");
+const simd = @import("simd.zig");
 
 /// The rate every ASR path in this project expects.
 pub const asr_sample_rate: u32 = 16000;
@@ -52,6 +53,11 @@ pub fn downmix(allocator: std.mem.Allocator, interleaved: []const f32, channels:
 
     const frames = interleaved.len / channels;
     const output = try allocator.alloc(f32, frames);
+    if (channels == 2) {
+        simd.downmixStereo(interleaved, output);
+        return output;
+    }
+
     for (output, 0..) |*sample, frame| {
         var sum: f64 = 0;
         for (0..channels) |channel| sum += interleaved[frame * channels + channel];

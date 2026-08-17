@@ -227,6 +227,52 @@ pub fn quantizeToI16(samples: []const f32, out: []i16) void {
     }
 }
 
+fn stereoShuffleMask(comptime n: comptime_int, comptime channel: comptime_int) @Vector(n, i32) {
+    var mask: [n]i32 = undefined;
+    for (0..n) |lane| {
+        const source = lane * 2 + channel;
+        mask[lane] = if (source < n)
+            @intCast(source)
+        else
+            ~@as(i32, @intCast(source - n));
+    }
+    return @bitCast(mask);
+}
+
+/// Average interleaved stereo frames into `out`. Two vector loads cover `n`
+/// frames; `@shuffle` then deinterleaves their left and right lanes before the
+/// lane-wise mean produces a full vector of mono samples. This is preferable
+/// to a gather: stereo is both the overwhelmingly common multichannel capture
+/// format and the one whose fixed stride maps cleanly onto a shuffle.
+pub fn downmixStereo(interleaved: []const f32, out: []f32) void {
+    std.debug.assert(interleaved.len % 2 == 0);
+    const frames = interleaved.len / 2;
+    std.debug.assert(out.len >= frames);
+
+    var frame: usize = 0;
+    if (comptime lanes(f32)) |n| {
+        const V = @Vector(n, f32);
+        const left_mask = comptime stereoShuffleMask(n, 0);
+        const right_mask = comptime stereoShuffleMask(n, 1);
+        const half: V = @splat(0.5);
+
+        while (frame + n <= frames) : (frame += n) {
+            const offset = frame * 2;
+            const low: V = interleaved[offset..][0..n].*;
+            const high: V = interleaved[offset + n ..][0..n].*;
+            const left = @shuffle(f32, low, high, left_mask);
+            const right = @shuffle(f32, low, high, right_mask);
+            // Halve first so two same-sign finite f32 values cannot overflow
+            // before their mean is taken.
+            out[frame..][0..n].* = left * half + right * half;
+        }
+    }
+
+    for (frame..frames) |i| {
+        out[i] = interleaved[i * 2] * 0.5 + interleaved[i * 2 + 1] * 0.5;
+    }
+}
+
 // Every test below runs lengths 0..64 so that the vector body and the scalar
 // tail are both exercised on any lane count a target might pick, including the
 // lengths where one of the two does nothing at all.
@@ -304,6 +350,29 @@ test "maxAbs matches the scalar loop" {
         for (samples) |s| expected = @max(expected, @abs(s));
         try std.testing.expectEqual(expected, maxAbs(samples));
     }
+}
+
+test "downmixStereo matches the scalar loop including every tail length" {
+    var interleaved: [max_test_len * 2]f32 = undefined;
+    _ = testSamples(&interleaved);
+    var actual: [max_test_len]f32 = undefined;
+
+    for (0..max_test_len + 1) |frames| {
+        downmixStereo(interleaved[0 .. frames * 2], actual[0..frames]);
+        for (0..frames) |frame| {
+            const expected = interleaved[frame * 2] * 0.5 + interleaved[frame * 2 + 1] * 0.5;
+            try std.testing.expectEqual(expected, actual[frame]);
+        }
+    }
+}
+
+test "downmixStereo does not overflow while averaging finite samples" {
+    const largest = std.math.floatMax(f32);
+    const interleaved = [_]f32{ largest, largest, -largest, -largest };
+    var actual: [2]f32 = undefined;
+    downmixStereo(&interleaved, &actual);
+    try std.testing.expectEqual(largest, actual[0]);
+    try std.testing.expectEqual(-largest, actual[1]);
 }
 
 test "scale matches the scalar loop" {
