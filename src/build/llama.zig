@@ -66,18 +66,6 @@ pub fn buildGgml(
         "-DGGML_COMMIT=\"unknown\"",
         "-DGGML_USE_CPU",
     };
-    // Zig 0.16's bundled libc++ headers (LLVM 21) declare std::__hash_memory
-    // as an exported dylib symbol, but macOS's system libc++ doesn't provide it.
-    // Compile a shim that supplies the missing definition so the static lib
-    // links against the system libc++ without undefined symbols.
-    if (is_darwin) {
-        ggml.root_module.addCSourceFiles(.{
-            .root = b.path("src/build"),
-            .files = &.{"libcxx_hash_shim.cpp"},
-            .flags = &.{"-std=c++17"},
-        });
-    }
-
     const cpp_flags: []const []const u8 = if (has_metal) &.{
         "-std=c++17",
         "-fvisibility=hidden",

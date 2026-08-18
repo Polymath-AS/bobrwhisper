@@ -70,8 +70,46 @@ typedef enum {
     BOBRWHISPER_TONE_CODE = 3,
 } bobrwhisper_tone_e;
 
+typedef enum {
+    BOBRWHISPER_POSTPROCESS_LITERAL = 0,
+    BOBRWHISPER_POSTPROCESS_CONSERVATIVE = 1,
+    BOBRWHISPER_POSTPROCESS_POLISH = 2,
+} bobrwhisper_postprocess_mode_e;
+
+typedef enum {
+    BOBRWHISPER_TRANSCRIPT_RECOGNIZING = 0,
+    BOBRWHISPER_TRANSCRIPT_CLEANING = 1,
+    BOBRWHISPER_TRANSCRIPT_FINAL = 2,
+} bobrwhisper_transcript_phase_e;
+
+typedef struct {
+    const char* bundle_id;
+    const char* window_title;
+    const char* text_before_cursor;
+    const char* text_after_cursor;
+    const char* selected_text;
+    bool is_secure;
+} bobrwhisper_recording_context_s;
+
+typedef struct {
+    const char* language;
+    bobrwhisper_postprocess_mode_e postprocess_mode;
+    bobrwhisper_tone_e tone;
+    bool whisper_mode;
+    const bobrwhisper_recording_context_s* context;
+} bobrwhisper_recording_options_s;
+
+typedef struct {
+    uint64_t session_id;
+    uint64_t revision;
+    bobrwhisper_string_s stable_text;
+    bobrwhisper_string_s unstable_text;
+    bobrwhisper_transcript_phase_e phase;
+} bobrwhisper_transcript_update_s;
+
 typedef void (*bobrwhisper_status_cb)(void* userdata, bobrwhisper_status_e status);
 typedef void (*bobrwhisper_transcript_cb)(void* userdata, bobrwhisper_string_s text, bool is_final);
+typedef void (*bobrwhisper_transcript_update_cb)(void* userdata, bobrwhisper_transcript_update_s update);
 typedef void (*bobrwhisper_error_cb)(void* userdata, bobrwhisper_string_s error);
 /// Non-fatal warning channel. Runtime issues that the user should know about
 /// but that do not stop work in progress (stuck microphone, suboptimal input
@@ -90,6 +128,7 @@ typedef struct {
     const char* llm_model_path;
     const char* vad_model_path;
     bool whisper_mode;
+    bobrwhisper_transcript_update_cb on_transcript_update;
 } bobrwhisper_runtime_config_s;
 
 typedef struct {
@@ -131,6 +170,8 @@ bool bobrwhisper_model_exists(bobrwhisper_app_t app, bobrwhisper_model_size_e si
 bobrwhisper_string_s bobrwhisper_model_path(bobrwhisper_app_t app, bobrwhisper_model_size_e size);
 bool bobrwhisper_model_load(bobrwhisper_app_t app, bobrwhisper_model_size_e size);
 void bobrwhisper_model_unload(bobrwhisper_app_t app);
+/** Select an installed local GGUF for cleanup. The path is copied by the core. */
+bool bobrwhisper_llm_model_set_path(bobrwhisper_app_t app, const char* model_path);
 bool bobrwhisper_settings_write(bobrwhisper_app_t app, const bobrwhisper_settings_s* settings);
 
 bool bobrwhisper_start_recording(bobrwhisper_app_t app);
@@ -138,6 +179,16 @@ bool bobrwhisper_start_recording_live(bobrwhisper_app_t app, const char* languag
 void bobrwhisper_stop_recording(bobrwhisper_app_t app);
 bool bobrwhisper_stop_recording_live(bobrwhisper_app_t app, const bobrwhisper_transcribe_options_s* options);
 bool bobrwhisper_is_recording(bobrwhisper_app_t app);
+
+/** Start a session. Returns a non-zero monotonic session id on success. */
+uint64_t bobrwhisper_recording_start(
+    bobrwhisper_app_t app,
+    const bobrwhisper_recording_options_s* options
+);
+/** Drain and finalize the matching session. */
+bool bobrwhisper_recording_stop(bobrwhisper_app_t app, uint64_t session_id);
+/** Cancel the matching session; late updates are ignored. */
+void bobrwhisper_recording_cancel(bobrwhisper_app_t app, uint64_t session_id);
 
 bool bobrwhisper_transcribe(
     bobrwhisper_app_t app,

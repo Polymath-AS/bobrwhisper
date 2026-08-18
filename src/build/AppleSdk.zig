@@ -7,7 +7,7 @@ pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
     const target = step.rootModuleTarget();
     if (!target.os.tag.isDarwin()) return;
 
-    const libc = std.zig.LibCInstallation.findNative(b.graph.arena, b.graph.io, .{
+    var libc = std.zig.LibCInstallation.findNative(b.graph.arena, b.graph.io, .{
         .target = &target,
         .environ_map = &b.graph.environ_map,
         .verbose = false,
@@ -16,13 +16,36 @@ pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
         else => return err,
     };
 
+    // Xcode 27's math.h asks Clang's float.h for infinity and NaN through the
+    // __need_infinity_nan protocol. Zig 0.16's bundled Clang resource headers
+    // predate that protocol, so compiling Zig's bundled libc++ against the new
+    // SDK otherwise fails with an undeclared INFINITY. Ghostty works around the
+    // same toolchain mismatch by putting a forwarding compatibility header
+    // between Zig's resource headers and the selected SDK.
+    libc.include_dir = b.path("src/build/apple-sdk-include").getPath(b);
+
+    // Supplying individual include paths is not enough: Zig also builds parts
+    // of its bundled libc++ in a child compilation. Render the discovered SDK
+    // as a libc configuration and attach it to the whole compile step so those
+    // child compilations inherit the same Apple sysroot.
+    var rendered: std.Io.Writer.Allocating = .init(b.graph.arena);
+    defer rendered.deinit();
+    try libc.render(&rendered.writer);
+    const generated = b.addWriteFiles();
+    step.setLibCFile(generated.add("apple-libc.txt", rendered.written()));
+
+    // Zig 0.16's libc++ configuration expects this setting as a compiler
+    // define. It makes newer libc++ headers use inline compatibility paths for
+    // symbols unavailable in the deployment target's system libc++.
+    step.root_module.addCMacro(
+        "_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS",
+        "1",
+    );
+
     // Use the SDK selected by Zig/Xcode rather than assuming that Xcode is
     // installed at /Applications/Xcode.app. This also respects DEVELOPER_DIR
     // and xcode-select (for example, when Xcode-beta is active).
     const sdk_path = getSdkPath(libc) orelse return;
-    if (libc.include_dir) |dir| {
-        step.root_module.addSystemIncludePath(.{ .cwd_relative = dir });
-    }
     if (libc.sys_include_dir) |dir| {
         step.root_module.addSystemIncludePath(.{ .cwd_relative = dir });
     }

@@ -157,6 +157,7 @@ sample_rate: f64 = 16000.0,
 buffer_duration_ms: u32 = 30,
 device_uid: ?[]const u8 = null,
 device_name: ?[]const u8 = null,
+device_selection_fell_back: bool = false,
 
 // CoreAudio handles (macOS only)
 audio_queue: if (builtin.os.tag == .macos) c.AudioQueueRef else void =
@@ -219,6 +220,7 @@ pub fn start(self: *AudioCapture) !void {
 
     self.buffer.clearRetainingCapacity();
     self.consecutive_zero_samples = 0;
+    self.device_selection_fell_back = false;
     try self.buffer.ensureTotalCapacity(self.allocator, 16000 * 30);
 
     if (builtin.os.tag == .macos) {
@@ -230,6 +232,12 @@ pub fn start(self: *AudioCapture) !void {
     }
 
     self.is_recording = true;
+}
+
+/// True when an explicitly selected CoreAudio UID could not be applied and
+/// the queue safely remained attached to macOS's system-default input.
+pub fn didFallbackToDefaultDevice(self: *AudioCapture) bool {
+    return self.device_selection_fell_back;
 }
 
 pub fn stop(self: *AudioCapture) void {
@@ -367,8 +375,16 @@ fn startCoreAudio(self: *AudioCapture) !void {
             @ptrCast(&property_value),
         );
         if (status != c.noErr) {
-            std.log.err("AudioQueueSetProperty(current device) failed: {}", .{status});
-            return error.AudioDeviceSelectionFailed;
+            // AudioQueueNewInput creates a usable queue already following the
+            // system default. Some devices and macOS versions reject the
+            // optional CurrentDevice property (notably with
+            // kAudioQueueErr_InvalidPropertySize). Do not turn that preference
+            // failure into a total recording failure.
+            self.device_selection_fell_back = true;
+            std.log.warn(
+                "AudioQueue rejected selected input UID (status {}); using system default",
+                .{status},
+            );
         }
     }
 

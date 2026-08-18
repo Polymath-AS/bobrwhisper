@@ -145,8 +145,42 @@ pub const Tone = enum(c_int) {
     }
 };
 
+pub const PostprocessMode = enum(c_int) {
+    literal = 0,
+    conservative = 1,
+    polish = 2,
+};
+
+pub const TranscriptPhase = enum(c_int) {
+    recognizing = 0,
+    cleaning = 1,
+    final = 2,
+};
+
+pub const RecordingContext = extern struct {
+    bundle_id: ?[*:0]const u8,
+    window_title: ?[*:0]const u8,
+    text_before_cursor: ?[*:0]const u8,
+    text_after_cursor: ?[*:0]const u8,
+    selected_text: ?[*:0]const u8,
+    is_secure: bool,
+
+    pub fn span(value: ?[*:0]const u8) []const u8 {
+        return if (value) |ptr| std.mem.span(ptr) else "";
+    }
+};
+
+pub const TranscriptUpdate = extern struct {
+    session_id: u64,
+    revision: u64,
+    stable_text: String,
+    unstable_text: String,
+    phase: TranscriptPhase,
+};
+
 pub const StatusCallback = *const fn (?*anyopaque, Status) callconv(.c) void;
 pub const TranscriptCallback = *const fn (?*anyopaque, String, bool) callconv(.c) void;
+pub const TranscriptUpdateCallback = *const fn (?*anyopaque, TranscriptUpdate) callconv(.c) void;
 pub const ErrorCallback = *const fn (?*anyopaque, String) callconv(.c) void;
 /// Non-fatal warning channel. Used by the App for stuck-mic, Bluetooth-mic,
 /// and similar advisories that should NOT flip status to .error.
@@ -166,6 +200,7 @@ pub const RuntimeConfig = extern struct {
     llm_model_path: ?[*:0]const u8,
     vad_model_path: ?[*:0]const u8,
     whisper_mode: bool,
+    on_transcript_update: ?TranscriptUpdateCallback,
 
     pub fn getModelsDir(self: RuntimeConfig) []const u8 {
         if (self.models_dir) |ptr| {
@@ -193,6 +228,18 @@ pub const RuntimeConfig = extern struct {
             return std.mem.span(ptr);
         }
         return null;
+    }
+};
+
+pub const RecordingOptions = extern struct {
+    language: ?[*:0]const u8,
+    postprocess_mode: PostprocessMode,
+    tone: Tone,
+    whisper_mode: bool,
+    context: ?*const RecordingContext,
+
+    pub fn getLanguage(self: RecordingOptions) []const u8 {
+        return if (self.language) |ptr| std.mem.span(ptr) else "en";
     }
 };
 

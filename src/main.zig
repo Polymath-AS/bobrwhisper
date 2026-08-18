@@ -101,6 +101,30 @@ pub export fn bobrwhisper_is_recording(app: ?*App) bool {
     return a.isRecording();
 }
 
+pub export fn bobrwhisper_recording_start(app: ?*App, options: ?*const c.RecordingOptions) u64 {
+    const a = app orelse return 0;
+    const opts = options orelse return 0;
+    return a.startRecordingSession(opts.*) catch |err| {
+        std.log.warn("Failed to start recording session: {}", .{err});
+        return 0;
+    };
+}
+
+pub export fn bobrwhisper_recording_stop(app: ?*App, session_id: u64) bool {
+    const a = app orelse return false;
+    a.stopRecordingSession(session_id) catch |err| {
+        std.log.warn("Failed to stop recording session {d}: {}", .{ session_id, err });
+        a.cancelRecordingSession(session_id);
+        return false;
+    };
+    return true;
+}
+
+pub export fn bobrwhisper_recording_cancel(app: ?*App, session_id: u64) void {
+    const a = app orelse return;
+    a.cancelRecordingSession(session_id);
+}
+
 pub export fn bobrwhisper_get_status(app: ?*App) c.Status {
     const a = app orelse return .idle;
     return a.getStatus();
@@ -214,6 +238,13 @@ pub export fn bobrwhisper_model_load(app: ?*App, size: c.ModelSize) bool {
 pub export fn bobrwhisper_model_unload(app: ?*App) void {
     const a = app orelse return;
     a.unloadModel();
+}
+
+pub export fn bobrwhisper_llm_model_set_path(app: ?*App, model_path: ?[*:0]const u8) bool {
+    const a = app orelse return false;
+    const path = model_path orelse return false;
+    a.setLlmModelPath(std.mem.span(path)) catch return false;
+    return true;
 }
 
 pub export fn bobrwhisper_settings_write(app: ?*App, settings: ?*const c.Settings) bool {

@@ -142,12 +142,14 @@ pub fn appendTranscript(self: *LogStore, allocator: std.mem.Allocator, transcrip
         return error.SqliteBindFailed;
     }
 
+    var owned_formatted: ?[:0]u8 = null;
+    defer if (owned_formatted) |owned| allocator.free(owned);
+
     if (formatted_text) |ft| {
         const trimmed_ft = std.mem.trim(u8, ft, " \n\r\t");
         if (trimmed_ft.len > 0) {
-            const owned_ft = try allocator.dupeZ(u8, trimmed_ft);
-            defer allocator.free(owned_ft);
-            const bind_ft = sqlite.sqlite3_bind_text(stmt, 3, owned_ft.ptr, @intCast(trimmed_ft.len), null);
+            owned_formatted = try allocator.dupeZ(u8, trimmed_ft);
+            const bind_ft = sqlite.sqlite3_bind_text(stmt, 3, owned_formatted.?.ptr, @intCast(trimmed_ft.len), null);
             if (bind_ft != sqlite.SQLITE_OK) {
                 return error.SqliteBindFailed;
             }
@@ -217,6 +219,10 @@ pub fn readRecent(self: *LogStore, allocator: std.mem.Allocator, limit: usize) !
         const ft_len = sqlite.sqlite3_column_bytes(stmt, 2);
         const owned_ft: ?[]u8 = if (ft_ptr != null and ft_len > 0) blk: {
             const ft_slice = @as([*]const u8, @ptrCast(ft_ptr.?))[0..@intCast(ft_len)];
+            // Older builds bound this value with SQLITE_STATIC and released
+            // its backing allocation before sqlite3_step. Ignore those
+            // corrupted rows so clients fall back to the intact raw text.
+            if (!std.unicode.utf8ValidateSlice(ft_slice)) break :blk null;
             break :blk try allocator.dupe(u8, ft_slice);
         } else null;
 
@@ -236,6 +242,23 @@ pub fn freeEntries(allocator: std.mem.Allocator, entries: []Entry) void {
         if (entry.formatted_text) |ft| allocator.free(ft);
     }
     allocator.free(entries);
+}
+
+test "formatted transcript remains valid through sqlite step" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const path_len = try tmp.dir.realPath(std.testing.io, &path_buffer);
+
+    var store = try LogStore.init(std.testing.allocator, path_buffer[0..path_len]);
+    defer store.deinit();
+    try store.appendTranscript(std.testing.allocator, "raw transcript", "final transcript 🙂");
+
+    const entries = try store.readRecent(std.testing.allocator, 1);
+    defer freeEntries(std.testing.allocator, entries);
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    try std.testing.expectEqualStrings("raw transcript", entries[0].text);
+    try std.testing.expectEqualStrings("final transcript 🙂", entries[0].formatted_text.?);
 }
 
 fn exec(self: LogStore, sql: []const u8) !void {

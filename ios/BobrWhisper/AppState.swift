@@ -153,7 +153,8 @@ class AppState: ObservableObject {
                 appState.lastTranscript = transcript
                 KeyboardSharedState.writeTranscript(transcript)
                 if isFinal {
-                    appState.appendTranscriptLogEntry(transcript, persistToStore: true)
+                    // The Zig core persists raw and final text exactly once.
+                    appState.appendTranscriptLogEntry(transcript, persistToStore: false)
                 }
             }
         }

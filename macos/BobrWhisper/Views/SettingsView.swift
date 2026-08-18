@@ -227,6 +227,28 @@ struct ModelsSettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+            Section("Writing Cleanup") {
+                ForEach(CleanupModelDescriptor.all) { model in
+                    cleanupModelRow(model)
+                }
+
+                if appState.isDownloadingCleanupModel {
+                    HStack {
+                        ProgressView(value: appState.cleanupModelDownloadProgress)
+                            .progressViewStyle(.linear)
+
+                        Button("Cancel") {
+                            appState.cancelCleanupModelDownload()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+
+                Text("Optional and entirely on-device. A cleanup model improves punctuation and wording after transcription; without one, BobrWhisper keeps using deterministic cleanup.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             Section("Model Location") {
                 Text(appState.modelsDirectory.path)
@@ -241,6 +263,9 @@ struct ModelsSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            appState.refreshCleanupModelInstallations()
+        }
     }
 
     // MARK: - Grouped row rendering
@@ -344,6 +369,47 @@ struct ModelsSettingsView: View {
                     appState.downloadModel(current)
                 }
                 .disabled(appState.isDownloading)
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func cleanupModelRow(_ model: CleanupModelDescriptor) -> some View {
+        let installed = appState.cleanupModelExists(model)
+        let selected = installed && appState.selectedCleanupModelID == model.id
+
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.displayName)
+                Text("\(model.detail) • \(model.sizeLabel)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if installed {
+                    Text(selected ? "Downloaded (Active)" : "Downloaded")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+            }
+
+            Spacer()
+
+            if selected {
+                Button("Active") {}
+                    .disabled(true)
+                    .buttonStyle(.borderedProminent)
+            } else if installed {
+                Button("Use") {
+                    appState.selectCleanupModel(model)
+                }
+                .disabled(appState.isRecording)
+                .buttonStyle(.bordered)
+            } else {
+                Button("Download") {
+                    appState.downloadCleanupModel(model)
+                }
+                .disabled(appState.isDownloadingCleanupModel)
                 .buttonStyle(.bordered)
             }
         }

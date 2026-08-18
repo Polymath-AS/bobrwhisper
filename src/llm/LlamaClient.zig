@@ -68,19 +68,19 @@ pub fn deinit(self: *LlamaClient) void {
 }
 
 fn createSampler() *c.llama_sampler {
-    const sparams = c.llama_sampler_chain_default_params();
-    const smpl = c.llama_sampler_chain_init(sparams);
-
-    c.llama_sampler_chain_add(smpl, c.llama_sampler_init_top_k(40));
-    c.llama_sampler_chain_add(smpl, c.llama_sampler_init_top_p(0.9, 1));
-    c.llama_sampler_chain_add(smpl, c.llama_sampler_init_temp(0.7));
-    c.llama_sampler_chain_add(smpl, c.llama_sampler_init_dist(c.LLAMA_DEFAULT_SEED));
-
-    return smpl;
+    // Transcript cleanup must be reproducible. Greedy decoding also avoids the
+    // commentary/expansion variance that small local instruct models show with
+    // temperature sampling.
+    return c.llama_sampler_init_greedy();
 }
 
 pub fn generate(self: *LlamaClient, prompt: []const u8, max_tokens: u32) ![]u8 {
     return self.generateStreaming(prompt, max_tokens, null, null);
+}
+
+pub fn generateWithin(self: *LlamaClient, prompt: []const u8, max_tokens: u32, timeout_ms: u64) ![]u8 {
+    const deadline = compat.nanoTimestamp() + @as(i128, timeout_ms) * std.time.ns_per_ms;
+    return self.generateStreamingWithDeadline(prompt, max_tokens, null, null, deadline);
 }
 
 pub fn generateStreaming(
@@ -90,10 +90,22 @@ pub fn generateStreaming(
     stream_sink: ?StreamSink,
     stream_userdata: ?*anyopaque,
 ) ![]u8 {
+    return self.generateStreamingWithDeadline(prompt, max_tokens, stream_sink, stream_userdata, null);
+}
+
+fn generateStreamingWithDeadline(
+    self: *LlamaClient,
+    prompt: []const u8,
+    max_tokens: u32,
+    stream_sink: ?StreamSink,
+    stream_userdata: ?*anyopaque,
+    deadline_ns: ?i128,
+) ![]u8 {
     _ = self.model orelse return error.NoModel;
     const ctx = self.ctx orelse return error.NoContext;
     const sampler = self.sampler orelse return error.NoSampler;
     const vocab = self.vocab orelse return error.NoVocab;
+    defer c.llama_memory_clear(c.llama_get_memory(ctx), true);
 
     // Tokenize prompt
     const n_prompt_max: i32 = @intCast(prompt.len + 128);
@@ -115,6 +127,7 @@ pub fn generateStreaming(
     if (c.llama_decode(ctx, batch) != 0) {
         return error.DecodeFailed;
     }
+    if (deadline_ns) |deadline| if (compat.nanoTimestamp() >= deadline) return error.DeadlineExceeded;
 
     // Generate tokens
     var output: std.ArrayListUnmanaged(u8) = .empty;
@@ -128,6 +141,7 @@ pub fn generateStreaming(
     const n_max: i32 = @min(n_ctx, n_prompt + @as(i32, @intCast(max_tokens)));
 
     while (n_cur < n_max) {
+        if (deadline_ns) |deadline| if (compat.nanoTimestamp() >= deadline) return error.DeadlineExceeded;
         const new_token = c.llama_sampler_sample(sampler, ctx, -1);
 
         if (c.llama_vocab_is_eog(vocab, new_token)) {
@@ -165,9 +179,6 @@ pub fn generateStreaming(
             sink(stream_userdata, output.items);
         }
     }
-
-    // Clear memory for next generation
-    c.llama_memory_clear(c.llama_get_memory(ctx), true);
 
     return output.toOwnedSlice(self.allocator);
 }

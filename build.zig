@@ -159,6 +159,12 @@ pub fn build(b: *std.Build) !void {
     });
     if (config.target.result.os.tag == .linux) {
         capture_module.linkSystemLibrary("asound", .{});
+    } else if (config.target.result.os.tag.isDarwin()) {
+        // Tests consume the capture module directly rather than through the
+        // LibCapture artifact, so its native framework dependencies must live
+        // on the module as well as on the installed shared/static libraries.
+        capture_module.linkFramework("AudioToolbox", .{});
+        capture_module.linkFramework("CoreFoundation", .{});
     }
     const capture_tests = b.addTest(.{ .root_module = capture_module });
     test_capture_step.dependOn(&b.addRunArtifact(capture_tests).step);
