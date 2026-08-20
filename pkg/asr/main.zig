@@ -10,3 +10,6 @@ const runtime_adapter = @import("RuntimeAdapter.zig");
 pub const RuntimeAdapter = runtime_adapter.RuntimeAdapter;
 pub const RuntimeLoadConfig = runtime_adapter.LoadConfig;
 pub const WhisperCppAdapter = @import("WhisperCppAdapter.zig");
+/// Owned, runtime-neutral recognition evidence. Produced by an adapter's
+/// `transcribeDetailed`; independent of the decoder context it came from.
+pub const Recognition = @import("Recognition.zig");
