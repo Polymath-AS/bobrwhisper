@@ -67,7 +67,7 @@ fn createLibrary(
         .name = name,
         .root_module = root_module,
         .linkage = linkage,
-        .version = .{ .major = 0, .minor = 1, .patch = 0 },
+        .version = .{ .major = 0, .minor = 2, .patch = 0 },
     });
     AsrBuild.addWhisperBridge(b, lib, deps, deps.optimize);
     try deps.linkWhisper(b, lib);
@@ -164,7 +164,7 @@ fn pkgConfig(b: *std.Build, os_tag: std.Target.Os.Tag) std.Build.LazyPath {
         \\Name: libwhisper
         \\URL: https://github.com/polymath-as/bobrwhisper
         \\Description: UI-independent local Whisper transcription library
-        \\Version: 0.1.0
+        \\Version: 0.2.0
         \\Cflags: -I${{includedir}}
         \\Libs: -L${{libdir}} -l{s}
         \\Libs.private: {s}

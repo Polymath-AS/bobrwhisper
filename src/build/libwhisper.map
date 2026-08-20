@@ -1,4 +1,4 @@
-LIBWHISPER_0.1 {
+LIBWHISPER_0.2 {
     global:
         libwhisper_*;
     local:

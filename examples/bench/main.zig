@@ -68,7 +68,22 @@ const Report = struct {
     realtime_factor: f64,
     audio_seconds_per_second: f64,
     transcript_bytes: usize,
+    segment_count: usize,
+    /// The language the model reports decoding, which is not necessarily the
+    /// one that was requested.
+    language: []const u8,
+    /// Null when the model produced no such metric. libwhisper reports absent
+    /// metrics as NaN, which has no JSON spelling, so it becomes null here
+    /// rather than a number that reads as confidence.
+    average_logprobability: ?f32,
+    minimum_token_probability: ?f32,
+    no_speech_probability: ?f32,
 };
+
+/// libwhisper's absent-metric sentinel, mapped to an optional.
+fn optionalMetric(value: f32) ?f32 {
+    return if (std.math.isNan(value)) null else value;
+}
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -120,41 +135,54 @@ pub fn main(init: std.process.Init) !void {
     }
     defer c.libwhisper_destroy(transcriber);
 
-    const transcribe_options: c.libwhisper_transcribe_options_s = .{
-        .language = options.language.ptr,
-        .single_segment = options.single_segment,
-    };
+    var transcribe_options: c.libwhisper_transcribe_options_s = undefined;
+    c.libwhisper_transcribe_options_init(&transcribe_options);
+    transcribe_options.language = options.language.ptr;
+    transcribe_options.single_segment = options.single_segment;
 
     for (0..options.warmup) |i| {
-        var text: c.libwhisper_string_s = undefined;
-        const err = c.libwhisper_transcribe(transcriber, samples.ptr, samples.len, &transcribe_options, &text);
+        var result: ?*c.libwhisper_result_t = null;
+        const err = c.libwhisper_transcribe(transcriber, samples.ptr, samples.len, &transcribe_options, &result);
         if (err != c.LIBWHISPER_SUCCESS) {
             try stderr.print("warmup {d} failed: {s}\n", .{ i + 1, c.libwhisper_error_string(err) });
             return error.TranscribeFailed;
         }
-        c.libwhisper_string_free(text);
+        c.libwhisper_result_free(result);
     }
 
     const times = try gpa.alloc(f64, options.iterations);
     defer gpa.free(times);
 
-    var last_text: c.libwhisper_string_s = .{ .ptr = null, .len = 0 };
-    defer c.libwhisper_string_free(last_text);
+    var last_result: ?*c.libwhisper_result_t = null;
+    defer c.libwhisper_result_free(last_result);
     for (times, 0..) |*slot, i| {
-        // Release the previous transcript before timing the next run so the free
-        // is not attributed to it. The final one is kept for reporting.
+        // Release the previous result before timing the next run so the free is
+        // not attributed to it. The final one is kept for reporting.
         if (i > 0) {
-            c.libwhisper_string_free(last_text);
-            last_text = .{ .ptr = null, .len = 0 };
+            c.libwhisper_result_free(last_result);
+            last_result = null;
         }
         const start = std.Io.Timestamp.now(io, .awake);
-        const err = c.libwhisper_transcribe(transcriber, samples.ptr, samples.len, &transcribe_options, &last_text);
+        const err = c.libwhisper_transcribe(transcriber, samples.ptr, samples.len, &transcribe_options, &last_result);
         slot.* = secondsSince(io, start);
         if (err != c.LIBWHISPER_SUCCESS) {
             try stderr.print("iteration {d} failed: {s}\n", .{ i + 1, c.libwhisper_error_string(err) });
             return error.TranscribeFailed;
         }
     }
+
+    // Read the final result back through the public accessors, so the benchmark
+    // also proves they work across the C boundary.
+    var summary: c.libwhisper_result_summary_s = undefined;
+    summary.struct_size = @sizeOf(c.libwhisper_result_summary_s);
+    const summary_error = c.libwhisper_result_summary(last_result, &summary);
+    if (summary_error != c.LIBWHISPER_SUCCESS) {
+        try stderr.print("libwhisper_result_summary failed: {s}\n", .{c.libwhisper_error_string(summary_error)});
+        return error.TranscribeFailed;
+    }
+    var transcript_bytes: usize = 0;
+    const transcript_ptr = c.libwhisper_result_text(last_result, &transcript_bytes);
+    const transcript: []const u8 = if (transcript_ptr) |ptr| ptr[0..transcript_bytes] else "";
 
     const stats = Stats.compute(gpa, times) catch |err| {
         try stderr.print("out of memory computing statistics\n", .{});
@@ -183,7 +211,12 @@ pub fn main(init: std.process.Init) !void {
         .standard_deviation_seconds = stats.standard_deviation,
         .realtime_factor = stats.mean / audio_seconds,
         .audio_seconds_per_second = audio_seconds / stats.mean,
-        .transcript_bytes = last_text.len,
+        .transcript_bytes = transcript.len,
+        .segment_count = c.libwhisper_result_segment_count(last_result),
+        .language = if (summary.language) |ptr| std.mem.span(ptr) else "",
+        .average_logprobability = optionalMetric(summary.average_logprobability),
+        .minimum_token_probability = optionalMetric(summary.minimum_token_probability),
+        .no_speech_probability = optionalMetric(summary.no_speech_probability),
     };
 
     if (options.json) {
@@ -198,6 +231,7 @@ pub fn main(init: std.process.Init) !void {
             \\  runs:        {d} measured, {d} warmup
             \\  latency:     {d:.3} s mean ± {d:.3} s (median {d:.3}, min {d:.3}, p95 {d:.3}, max {d:.3})
             \\  throughput:  {d:.3}x realtime (RTF {d:.4})
+            \\  decoding:    {s}, {d} segment(s), avg logprob {?d:.3}, min token p {?d:.3}, no-speech {?d:.3}
             \\  transcript:  {s}
             \\
         , .{
@@ -219,7 +253,12 @@ pub fn main(init: std.process.Init) !void {
             report.max_seconds,
             report.audio_seconds_per_second,
             report.realtime_factor,
-            if (last_text.ptr) |ptr| std.mem.span(ptr) else "(empty)",
+            if (report.language.len == 0) "(no language)" else report.language,
+            report.segment_count,
+            report.average_logprobability,
+            report.minimum_token_probability,
+            report.no_speech_probability,
+            if (transcript.len == 0) "(empty)" else transcript,
         });
     }
     try stdout.flush();

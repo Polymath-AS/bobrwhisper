@@ -5,6 +5,7 @@ const std = @import("std");
 const WhisperCppAdapter = @This();
 const builtin = @import("builtin");
 const bridge = @import("whisper_bridge.zig");
+pub const Recognition = @import("Recognition.zig");
 
 fn getenvVar(name: [:0]const u8) ?[:0]const u8 {
     const value = getenv_c(name.ptr) orelse return null;
@@ -171,16 +172,109 @@ pub fn transcribeLive(self: *WhisperCppAdapter, samples: []const f32, language: 
     return self.transcribeInternal(samples, language, true);
 }
 
-fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: []const u8, live: bool) ![]u8 {
+/// What the decoder should do, as opposed to what the caller wants reported.
+/// Only options that change decoding belong here; anything derived from a
+/// finished context is free and always collected.
+pub const DecodeOptions = struct {
+    language: []const u8,
+    /// Single segment, no cross-segment context. For live/streaming chunks.
+    live: bool = false,
+    /// Let the decoder emit timestamp tokens. This is the one reporting-shaped
+    /// option that is really a decoding option: it costs decode time and moves
+    /// the segment boundaries, so the transcript text itself differs from a run
+    /// without it.
+    timestamps: bool = false,
+};
+
+/// Transcribe and return the full evidence the decoder produced, not just text.
+/// Caller owns the result and must `deinit` it. The result borrows nothing from
+/// this adapter, so the next transcribe call cannot invalidate it.
+pub fn transcribeDetailed(
+    self: *WhisperCppAdapter,
+    samples: []const f32,
+    options: DecodeOptions,
+) !Recognition {
+    const ctx = try self.runWhisper(samples, options);
+    return collect(self.allocator, ctx, options.timestamps);
+}
+
+/// Walk a finished whisper context into an owned, context-independent result.
+///
+/// Two whisper.cpp details drive the shape of this loop. Token text is *not*
+/// what segment text is made of — `whisper_full_get_token_text` returns special
+/// markers verbatim while segment text has them stripped — so text comes from
+/// the segment and tokens contribute only probabilities. And there is no public
+/// per-segment average log probability, so it has to be derived from the tokens,
+/// which is why the walk happens unconditionally rather than on request.
+fn collect(gpa: std.mem.Allocator, ctx: *bridge.Context, timestamps: bool) !Recognition {
+    const raw_segment_count = bridge.bobrwhisper_whisper_segment_count(ctx);
+    const segment_count: usize = if (raw_segment_count > 0) @intCast(raw_segment_count) else 0;
+    const special_floor = bridge.bobrwhisper_whisper_special_token_floor(ctx);
+
+    var builder: Recognition.Builder = .init(gpa);
+    defer builder.deinit();
+    try builder.reserveSegments(segment_count);
+
+    for (0..segment_count) |index| {
+        const segment_index: i32 = @intCast(index);
+
+        if (bridge.bobrwhisper_whisper_segment_text(ctx, segment_index)) |text_ptr| {
+            try builder.appendText(std.mem.span(text_ptr));
+        }
+
+        const raw_token_count = bridge.bobrwhisper_whisper_segment_token_count(ctx, segment_index);
+        const token_count: usize = if (raw_token_count > 0) @intCast(raw_token_count) else 0;
+        for (0..token_count) |token_index| {
+            var token: bridge.TokenData = undefined;
+            bridge.bobrwhisper_whisper_segment_token(ctx, segment_index, @intCast(token_index), &token);
+            if (token.identifier >= special_floor) continue;
+            builder.addToken(token.probability, token.log_probability);
+        }
+
+        try builder.finishSegment(.{
+            .start_ms = if (timestamps)
+                Recognition.centisecondsToMilliseconds(
+                    bridge.bobrwhisper_whisper_segment_start_cs(ctx, segment_index),
+                )
+            else
+                null,
+            .end_ms = if (timestamps)
+                Recognition.centisecondsToMilliseconds(
+                    bridge.bobrwhisper_whisper_segment_end_cs(ctx, segment_index),
+                )
+            else
+                null,
+            .no_speech_probability = Recognition.validProbability(
+                bridge.bobrwhisper_whisper_segment_no_speech_probability(ctx, segment_index),
+            ),
+        });
+    }
+
+    const language = if (bridge.bobrwhisper_whisper_detected_language(ctx)) |ptr|
+        std.mem.span(ptr)
+    else
+        "";
+
+    return builder.toOwned(language);
+}
+
+/// Marshal the adapter's configuration and run `whisper_full`. Shared by the
+/// text-only and detailed paths so the parameter translation exists once.
+fn runWhisper(
+    self: *WhisperCppAdapter,
+    samples: []const f32,
+    options: DecodeOptions,
+) !*bridge.Context {
     const ctx = self.ctx orelse return error.NoContext;
 
     if (samples.len == 0) {
         return error.NoAudioData;
     }
 
-    std.log.info("Transcribing {d} samples, live={}, vad_enabled={}, vad_threshold={d:.3}, min_speech_ms={d}, min_silence_ms={d}, speech_pad_ms={d}", .{
+    std.log.info("Transcribing {d} samples, live={}, timestamps={}, vad_enabled={}, vad_threshold={d:.3}, min_speech_ms={d}, min_silence_ms={d}, speech_pad_ms={d}", .{
         samples.len,
-        live,
+        options.live,
+        options.timestamps,
         self.vad_enabled,
         self.vad_threshold,
         self.vad_min_speech_ms,
@@ -189,8 +283,8 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
     });
 
     var lang_buf: [8:0]u8 = [_:0]u8{0} ** 8;
-    const lang_len = @min(language.len, lang_buf.len - 1);
-    @memcpy(lang_buf[0..lang_len], language[0..lang_len]);
+    const lang_len = @min(options.language.len, lang_buf.len - 1);
+    @memcpy(lang_buf[0..lang_len], options.language[0..lang_len]);
 
     const result = bridge.bobrwhisper_whisper_transcribe(
         ctx,
@@ -198,7 +292,8 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         @intCast(samples.len),
         lang_buf[0..].ptr,
         @intCast(self.n_threads),
-        live,
+        options.live,
+        options.timestamps,
         self.vad_enabled,
         if (self.vad_model_path) |vad_path| vad_path.ptr else null,
         self.vad_threshold,
@@ -212,6 +307,11 @@ fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: 
         std.log.err("whisper_full failed: {}", .{result});
         return error.TranscriptionFailed;
     }
+    return ctx;
+}
+
+fn transcribeInternal(self: *WhisperCppAdapter, samples: []const f32, language: []const u8, live: bool) ![]u8 {
+    const ctx = try self.runWhisper(samples, .{ .language = language, .live = live });
 
     const n_segments = bridge.bobrwhisper_whisper_segment_count(ctx);
     if (n_segments == 0) {

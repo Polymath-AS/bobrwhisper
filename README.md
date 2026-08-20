@@ -134,15 +134,37 @@ config.model_path = "/path/to/ggml-base.en.bin";
 libwhisper_t *transcriber = NULL;
 if (libwhisper_create(&config, &transcriber) != LIBWHISPER_SUCCESS) return 1;
 
-libwhisper_string_s text;
-if (libwhisper_transcribe(transcriber, samples, sample_count, NULL, &text) == LIBWHISPER_SUCCESS) {
-    if (text.ptr != NULL) {   /* NULL means an empty transcript */
-        printf("%s\n", text.ptr);
-        libwhisper_string_free(text);
-    }
+libwhisper_result_t *result = NULL;
+if (libwhisper_transcribe(transcriber, samples, sample_count, NULL, &result) == LIBWHISPER_SUCCESS) {
+    /* Success always yields a result, so there is nothing to null-check. An
+       empty transcript is "" with zero segments. */
+    printf("%s\n", libwhisper_result_text(result, NULL));
+
+    libwhisper_result_summary_s summary;
+    summary.struct_size = sizeof(summary);
+    libwhisper_result_summary(result, &summary);
+    printf("%s, %zu segment(s), avg logprob %f\n",
+           summary.language, summary.segment_count, summary.average_logprobability);
+
+    libwhisper_result_free(result);
 }
 libwhisper_destroy(transcriber);
 ```
+
+A result carries the evidence the model produced while decoding — per-segment
+text ranges and timestamps, average and minimum token probabilities, no-speech
+probability, and the language it actually decoded — and owns all of it in one
+allocation until `libwhisper_result_free`. It is independent of the transcriber,
+so starting the next transcription cannot invalidate it and it can be read from
+another thread.
+
+libwhisper reports that evidence; it does not decide whether a transcript is
+trustworthy. Which combination of weak tokens, low average probability and
+no-speech evidence should reject a transcript, ask the user, or pass is caller
+policy — and only the caller can explain that decision to whoever it affects.
+Absent metrics are NaN rather than zero, because zero reads as maximum
+confidence for a log probability; write threshold tests so a missing value falls
+to the cautious branch (`if (!(value > threshold))`).
 
 `examples/c-smoke/main.c` is the executable version of that contract, and runs
 as part of `zig build test-libwhisper`. It stays hand-written C on purpose: it is
